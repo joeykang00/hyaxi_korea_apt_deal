@@ -14,7 +14,11 @@
 - 'LocationCode.csv' (3.8MB) from 공공데이터 
 
 # 3. Pre-Processing
-- Kaggle Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터를 이용하여 Human Readable Data 로 변경
+- python 3.11
+- pip install pandas matplotlib
+
+
+- 'KoreaApartDeal.csv' Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터 'LocationCode.csv' 를 이용하여 Human Readable Data 로 변경
 - 아파트와 전용면적으로 UniqueID를 부여하여 Data Processing 부호화
   
 [ Before ]
