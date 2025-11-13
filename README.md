@@ -22,13 +22,13 @@
 - 'KoreaApartDeal.csv' Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터 'LocationCode.csv' 를 이용하여 Human Readable Data 로 변경
 - 아파트와 전용면적으로 UniqueID를 부여하여 Data Processing 부호화
   
-[ Before ]
+[ Kaggle 원본 데이터 : 시도 이름 없어 데이터 분류 어려움 ]
 | 지역코드 | 법정동 | 거래일 | 아파트 | 지번 | 전용면적 | 층 | 건축년도 | 거래금액 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 31110 | 학성동 | 5/30/2020 0:00 | 남운학성타운 | 379 | 135.58 | 8 | 1991 | 26700 |
 | 31110 | 남외동 | 1/3/2020 0:00 | 남외푸르지오1차 | 506-1 | 101.6 | 2 | 2006 | 35500 |
 
-[ After ]
+[ 지역코드 공공데이터와 merge하여 시도 및 시군구명 추가 ]
 | UniqueID | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 311101010000000136 | 울산광역시 | 중구 | 학성동 | 남운학성타운 | 135.58 | 2020-05-30 | 26700 |
@@ -57,7 +57,7 @@ final_df['UniqueID'] = final_df['법정동코드'] + final_df['아파트ID'] + f
 - Kaggle Data중 '거래일자'의 Date Format이 불규칙하여, 하나의 format으로 변경하여 data frame에 저장
 - Kaggle Data중 '거래금액'의 Foramt이 불규칙하여, numeric으로 변경 할 수 있도록 string 변환
 
-[ Before ]
+[ format 이 일정치 않는 거래일과 거래금액 ]
 | UniqueID | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 311101010000000136 | 울산광역시 | 중구 | 학성동 | 남운학성타운 | 135.58 | 5/30/2020 0:00 | 26700 |
@@ -65,7 +65,57 @@ final_df['UniqueID'] = final_df['법정동코드'] + final_df['아파트ID'] + f
 | 431121090007429085 | 충청북도 | 청주시서원구 | 개신동 | 삼익2 | 84.96 | 2022-11-27 00:00:00 | 16,500 |
 
 
-[ After ]
+[ 표준 format으로 변경 및 결측 데이터 삭제   - python 3.11
+    - pip install pandas matplotlib
+
+
+- 'KoreaApartDeal.csv' Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터 'LocationCode.csv' 를 이용하여 Human Readable Data 로 변경
+- 아파트와 전용면적으로 UniqueID를 부여하여 Data Processing 부호화
+  
+[ Original Data from Kaggle ]
+| 지역코드 | 법정동 | 거래일 | 아파트 | 지번 | 전용면적 | 층 | 건축년도 | 거래금액 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 31110 | 학성동 | 5/30/2020 0:00 | 남운학성타운 | 379 | 135.58 | 8 | 1991 | 26700 |
+| 31110 | 남외동 | 1/3/2020 0:00 | 남외푸르지오1차 | 506-1 | 101.6 | 2 | 2006 | 35500 |
+
+[ Merged with Location Code from 공공데이터 ]
+| UniqueID | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 311101010000000136 | 울산광역시 | 중구 | 학성동 | 남운학성타운 | 135.58 | 2020-05-30 | 26700 |
+| 311101150000001102 | 울산광역시 | 중구 | 남외동 | 남외푸르지오1차 | 101.6 | 2020-01-03 | 35500 |
+
+```python
+location_df_filtered = location_df[location_df['시군구명'].notna()].copy()
+location_df_filtered['지역코드'] = location_df_filtered['법정동코드'].str[:5].astype(int)
+loc_map = location_df_filtered[['지역코드', '시도명', '시군구명']].drop_duplicates()
+df = pd.merge(deal_df, loc_map, on='지역코드', how='left')
+
+loc_lookup = location_df[['시도명', '시군구명', '읍면동명', '리명', '법정동코드']].copy()
+loc_lookup['법정동'] = (loc_lookup['읍면동명'].fillna('') + ' ' + loc_lookup['리명'].fillna('')).str.strip()
+final_df = pd.merge(df, loc_lookup[['시도명', '시군구명', '법정동', '법정동코드']],
+                    on=['시도명', '시군구명', '법정동'],
+                    how='left')
+
+unique_apart_count = final_df['아파트'].nunique()
+final_df['아파트ID'] = pd.factorize(final_df['아파트'])[0]
+final_df['아파트ID'] = final_df['아파트ID'].astype(str).str.zfill(5)
+final_df['전용면적ID'] = final_df['전용면적'].round(0).astype(int).astype(str).str.zfill(3)
+final_df['UniqueID'] = final_df['법정동코드'] + final_df['아파트ID'] + final_df['전용면적ID']
+```
+
+
+- Kaggle Data중 '거래일자'의 Date Format이 불규칙하여, 하나의 format으로 변경하여 data frame에 저장
+- Kaggle Data중 '거래금액'의 Foramt이 불규칙하여, numeric으로 변경 할 수 있도록 string 변환
+
+[ format 이 일정치 않는 거래일과 거래금액 ]
+| UniqueID | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 311101010000000136 | 울산광역시 | 중구 | 학성동 | 남운학성타운 | 135.58 | 5/30/2020 0:00 | 26700 |
+| 263801060021603049 | 부산광역시 | 사하구 | 다대동 | 몰운대 | 49.08 | 2016-01-07 00:00:00 | 10600 | 
+| 431121090007429085 | 충청북도 | 청주시서원구 | 개신동 | 삼익2 | 84.96 | 2022-11-27 00:00:00 | 16,500 |
+
+
+[ 표준 format으로 변경 및 결측치 데에터 삭제 ]
 | UniqueID | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 311101010000000136 | 울산광역시 | 중구 | 학성동 | 남운학성타운 | 135.58 | 2020-05-30 | 26700 |
