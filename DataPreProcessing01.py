@@ -2,10 +2,12 @@
 
 import pandas as pd
 import os
+import platform
 import zipfile
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.font_manager as fm
+from PIL import Image
 
 def prepare_csv_from_zip(data_dir, csv_filename, zip_filename):
     csv_path = os.path.join(data_dir, csv_filename)
@@ -85,8 +87,9 @@ final_df.drop(columns=['거래일_정리'], inplace=True)
 
 final_columns = [
     'UniqueID', '시도명', '시군구명', '법정동', '아파트',
-    '전용면적', '거래일', '거래금액',
+    '전용면적', '층', '건축년도', '거래일', '거래금액',
 ]
+
 final_columns_exist = [col for col in final_columns if col in final_df.columns]
 final_df = final_df[final_columns_exist]
 pd.set_option('display.width', None)
@@ -117,13 +120,56 @@ with zipfile.ZipFile(output_zip_path, 'w',
 
 print("\n--- Starting Data Visualization ---")
 
-try:
-    font_path = fm.findfont('NanumGothic', fallback_to_default=False)
-    plt.rc('font', family='NanumGothic')
-    print("'NanumGothic' is set successfully.")
-except:
-    print("경고: 'NanumGothic' is not found. Hangul can be displayed corruptly.")
-plt.rcParams['axes.unicode_minus'] = False
+def set_font():
+    os_name = platform.system()
+    font_family = None
+
+    if os_name == 'Windows':
+        font_list = ['Malgun Gothic', 'Dotum', 'Gulim']
+        for font in font_list:
+            try:
+                if fm.findfont(font, fallback_to_default=False):
+                    font_family = font
+                    break
+            except:
+                continue
+
+        if font_family:
+            plt.rc('font', family=font_family)
+            print(f"'{font_family}' font is set for Windows.")
+        else:
+            print("Warning: Could not find a suitable Hangul font (Malgun Gothic, Dotum, Gulim) on this Windows system. Characters may appear broken.")
+
+    elif os_name == 'Darwin':  # macOS
+        font_list = ['Apple SD Gothic Neo', 'AppleGothic']
+        for font in font_list:
+            try:
+                if fm.findfont(font, fallback_to_default=False):
+                    font_family = font
+                    break
+            except:
+                continue
+
+        if font_family:
+            plt.rc('font', family=font_family)
+            print(f"'{font_family}' font is set for macOS.")
+        else:
+            print("Warning: Could not find a suitable Hangul font (Apple SD Gothic Neo, AppleGothic) on this macOS system. Characters may appear broken.")
+
+    elif os_name == 'Linux':
+        try:
+            if fm.findfont('NanumGothic', fallback_to_default=False):
+                plt.rc('font', family='NanumGothic')
+                print("'NanumGothic' font is set for Linux.")
+            else:
+                print("Warning: 'NanumGothic' not found on this Linux system. Please install it. Characters may appear broken.")
+        except Exception as e:
+            print(f"Warning: An error occurred while setting 'NanumGothic'. Details: {e}")
+
+    else:
+        print("Warning: Could not determine the OS to set a proper Hangul font. Characters may appear broken.")
+
+    plt.rcParams['axes.unicode_minus'] = False
 
 
 def save_transaction_plots_by_date(df, output_dir='preprocessed'):
@@ -143,7 +189,7 @@ def save_transaction_plots_by_date(df, output_dir='preprocessed'):
     plt.tight_layout()
 
     output_viz_path = os.path.join(output_dir, '거래일별_거래건수_추이.png')
-    plt.savefig(output_viz_path, dpi=300)
+    plt.savefig(output_viz_path, dpi=150)
     print(f"Trend chart has been saved to: '{output_viz_path}'")
 
     plt.close()
@@ -152,14 +198,12 @@ def save_top100_plots_by_sido(df, output_dir='preprocessed'):
     os.makedirs(output_dir, exist_ok=True)
     print(f"transcation top 100 chart images are saved in '{output_dir}' folder.")
 
-    # 2. 전체 시도명 목록 가져오기
     sido_list = df['시도명'].unique()
 
     # 3. 각 시도명에 대해 반복 작업
     for sido in sido_list:
         print(f"\n'{sido}' chart is saving...")
 
-        # 현재 시도에 해당하는 데이터만 필터링
         sido_df = df[df['시도명'] == sido].copy()
 
         if sido_df.empty:
@@ -195,13 +239,75 @@ def save_top100_plots_by_sido(df, output_dir='preprocessed'):
         filename = f"{safe_sido_name}_가격추이_상위100.png"
         filepath = os.path.join(output_dir, filename)
 
-        plt.savefig(filepath, dpi=300)
+        plt.savefig(filepath, dpi=150)
         print(f"'{filepath}' file saved.")
 
         plt.close()
 
     print("\n--- All Chart is saved. ---")
 
+def combine_images_to_grid(input_dir='preprocessed', output_filename='Combined_Apartment_Trends.png', except_filename='아오지', grid_size=(4, 4)):
+    print("\n--- Starting to combine plot images into a single grid image ---")
+
+    # 1. '서울특별시'로 시작하는 파일을 제외하고 이미지 파일 목록을 가져옵니다.
+    try:
+        image_files = [
+            f for f in os.listdir(input_dir)
+            if f.endswith('_가격추이_상위100.png') and not f.startswith(except_filename)
+        ]
+        image_files.sort()  # 파일 이름을 기준으로 정렬
+        print("Excluding files starting with '서울특별시'.")
+    except FileNotFoundError:
+        print(f"Error: Input directory '{input_dir}' not found.")
+        return
+
+    if not image_files:
+        print("No images found to combine after filtering.")
+        return
+
+    # 첫 번째 이미지를 열어 개별 이미지의 크기를 확인합니다.
+    try:
+        with Image.open(os.path.join(input_dir, image_files[0])) as img:
+            img_width, img_height = img.size
+    except Exception as e:
+        print(f"Error opening the first image: {e}")
+        return
+
+    cols, rows = grid_size
+    total_width = img_width * cols
+    total_height = img_height * rows
+
+    grid_image = Image.new('RGB', (total_width, total_height), 'white')
+    print(f"Creating a new grid image with original size {total_width}x{total_height}...")
+
+    for index, filename in enumerate(image_files):
+        if index >= rows * cols:
+            print(f"Warning: More than {rows * cols} images found. Only the first {rows * cols} will be included.")
+            break
+
+        row = index // cols
+        col = index % cols
+        x_offset = col * img_width
+        y_offset = row * img_height
+
+        try:
+            with Image.open(os.path.join(input_dir, filename)) as img:
+                grid_image.paste(img, (x_offset, y_offset))
+        except Exception as e:
+            print(f"Error processing {filename}: {e}")
+            continue
+
+    target_width, target_height = 3000, 1600
+    print(f"Resizing final image to {target_width}x{target_height}...")
+    resized_image = grid_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+    output_path = os.path.join(input_dir, output_filename)
+    resized_image.save(output_path, dpi=(150, 150))
+    print(f"--- Successfully combined and resized {min(len(image_files), rows * cols)} images into '{output_path}' ---")
+
 if not final_df.dropna(subset=['UniqueID', '시도명']).empty:
+    set_font()
     save_transaction_plots_by_date(final_df)
     save_top100_plots_by_sido(final_df)
+
+    combine_images_to_grid(input_dir='preprocessed', output_filename='16개지역-top100.png', except_filename='서울특별시', grid_size=(4, 4))
