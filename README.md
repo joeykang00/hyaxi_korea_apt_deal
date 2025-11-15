@@ -7,7 +7,7 @@
 - 강종석 JongSeok Kang
 
 # 1. Objective
-- 대한민국 아파트 실거래 데이터셋을 활용한 가격 예측 분석
+- 대한민국 아파트 실거래 데이터셋을 머신러닝을 이용하여 학습시키고 매매 투자시 가장 큰 이익을 가져다 주는 아파트를 예측
 
 # 2. Dataset
 - 'KoreaApartDeal.csv'  01/15/2015 ~ 04/30/2023 (425MB) from Kaggle
@@ -167,10 +167,166 @@ def save_top100_plots_by_sido(df, output_dir='preprocessed'):
 ```
 
 # 5. Analysis based on Theory
-- xxx
+- XGBoost Algorithm 적용
+> https://www.ibm.com/kr-ko/think/topics/xgboost
+>> XGBoost란 무엇인가요?
+>>> XGBoost(eXtreme Gradient Boosting)는 경사하강법을 활용하는 지도 학습 부스팅 알고리즘인 그레이디언트 부스트 Decision Trees를 사용하는 분산형 오픈 소스 머신 러닝 라이브러리입니다. 속도, 효율성, 대규모 데이터 세트에 대한 확장성이 뛰어난 것으로 잘 알려져 있습니다.
+>>> 워싱턴 대학교의 티안치 첸(Tianqi Chen)이 개발한 XGBoost는 동일한 일반 프레임워크를 사용하여 그레이디언트 부스팅을 고급으로 구현한 것입니다. 즉, 잔차를 더하여 약한 학습기 트리를 강한 학습기로 결합합니다. 이 라이브러리는 C++, Python, R, Java, Scala 및 Julia에서 사용할 수 있습니다.1
+
+>>> Decision Trees와 부스팅 비교
+>>> Decision Trees는 머신 러닝에서 분류 또는 회귀 작업에 사용됩니다. 내부 노드는 기능을, 분기는 의사 결정 규칙을, 각 리프 노드는 데이터 세트의 결과를 나타내는 계층적 트리 구조를 사용합니다.
+>>> Decision Trees는 과적합되기 쉽기 때문에 부스팅과 같은 앙상블 방법을 사용하여 더 견고한 모델을 만들 수 있습니다. 부스팅은 여러 개의 개별 약한 트리, 즉 무작위 확률보다 약간 더 나은 성능을 보이는 모델을 결합하여 강한 학습기를 형성합니다. 각 약한 학습기는 이전 모델에서 발생한 오류를 수정하기 위해 순차적으로 학습합니다. 수백 번의 반복 후 약한 학습기는 강한 학습기로 변환됩니다.
+>>> 랜덤 포레스트와 부스팅 알고리즘은 모두 개별 학습기 트리를 사용하여 예측 성능을 향상하는 인기 있는 앙상블 학습 기법입니다. 랜덤 포레스트는 배깅(부트스트랩 집계) 개념을 기반으로 하며 각 트리를 독립적으로 학습시켜 예측을 결합하지만, 부스팅 알고리즘은 약한 학습기가 순차적으로 학습되어 이전 모델의 실수를 수정하는 가산적 접근 방식을 사용합니다.
+
+- Data Load
+
+ PreProcessed Data를 Load 하고, 거래 횟수가 너무 적은 아파트의 Data는 Train시 부정확성을 높일 우려가 있어, 사전 제거
+```python
+MIN_TRANSACTION_COUNT = 10  # 최소 거래 횟수 필터링 기준
+apt_counts = df['UniqueID'].value_counts()
+valid_uids = apt_counts[apt_counts >= MIN_TRANSACTION_COUNT].index
+df = df[df['UniqueID'].isin(valid_uids)].copy()
+print(f"최소 {MIN_TRANSACTION_COUNT}회 이상 거래된 아파트로 필터링 후, 남은 거래 기록: {len(df)}개")
+```
+
+- XGBoost 입력 전 시도명 등 String 형식의 Data를 LabelEncoder를 통하여 정수형으로 변경
+```python
+cat_features = ['시도명', '시군구명', '법정동', '아파트']
+label_encoders = {}
+for col in cat_features:
+    df[col] = df[col].astype(str).fillna('missing')
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col])
+    label_encoders[col] = le
+```
+
+- XGBoost 입력
+```python
+# 인코딩된 데이터를 X에 할당
+X = df[features]
+y = df[target]
+
+features = ['시도명', '시군구명', '법정동', '아파트', '전용면적',
+            '건축년도', '거래_년', '거래_월', '건축_경과년수', '최근_거래일_점수']
+target = '거래금액'
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+xgb_model = XGBRegressor(
+    n_estimators=1000,
+    learning_rate=0.05,
+    max_depth=6,
+    random_state=42,
+    n_jobs=-1
+)
+xgb_model.fit(X_train, y_train)
+```
+
+- XGBoost용 preload data 및 trained data를 file로 저장하여, 매번 load를 하지않고 prediction시 Quick하게 수행
+```python
+if not SHOULD_RETRAIN:
+    # XGBoost용 preload data 및 trained data file을 읽기
+    dtype_spec_loaded = {col: 'int' for col in ['시도명', '시군구명', '법정동', '아파트']}
+    df = pd.read_csv(PRELOAD_FILE_PATH, dtype=dtype_spec_loaded)
+    xgb_model = joblib.load(MODEL_FILE_PATH)
+
+# Snip... XBoost 수행 ...
+
+# XGBoost용 preload data 및 trained data를 file로 저장하여
+df.to_csv(PRELOAD_FILE_PATH, index=False, encoding='utf-8')
+joblib.dump(xgb_model, MODEL_FILE_PATH)
+```
 
 # 6. Prediction
-- xxx
-- 
-# 7. Conclusion
-- xxx
+- 매입 시점은 2025년 12월,  매각 시점은 2030년 12월로 임의 고정 (간단하게 입력 방식으로도 변경 가능)
+- 매입 시점과 매각 시점의 가격을 XGBoost로 Prediction
+```python
+base_cols = ['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도']
+buy_X = all_unique_apts[base_cols].copy()
+buy_X['거래_년'] = predict_date_2025.year
+buy_X['거래_월'] = predict_date_2025.month
+buy_X['건축_경과년수'] = buy_X['거래_년'] - buy_X['건축년도']
+buy_X['최근_거래일_점수'] = (predict_date_2025 - base_deal_date).days
+
+sell_X = all_unique_apts[base_cols].copy()
+sell_X['거래_년'] = predict_date_2030.year
+sell_X['거래_월'] = predict_date_2030.month
+sell_X['건축_경과년수'] = sell_X['거래_년'] - sell_X['건축년도']
+sell_X['최근_거래일_점수'] = (predict_date_2030 - base_deal_date).days
+
+buy_X_model = buy_X[features]
+sell_X_model = sell_X[features]
+
+print("\n모델 예측 수행 시작 (전국)...")
+buy_prices_2025 = xgb_model.predict(buy_X_model)
+sell_prices_2030 = xgb_model.predict(sell_X_model)
+```
+
+- XGBoost로 Prediction된 매각 시점 가격과 매입시점 가격의 차이을 가지고 dataframe 생성
+```python
+reco_df = all_unique_apts[['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도']].copy()
+reco_df['매입예상가_2025_12'] = buy_prices_2025.astype(int)
+reco_df['매각예상가_2030_12'] = sell_prices_2030.astype(int)
+reco_df['예상_최대이익'] = reco_df['매각예상가_2030_12'] - reco_df['매입예상가_2025_12']
+
+for col in cat_features:
+    reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
+
+reco_df = reco_df.sort_values(by='예상_최대이익', ascending=False).reset_index(drop=True)
+
+sido_list = sorted(reco_df['시도명'].unique())
+sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
+```
+
+# 7. Result
+- 시도별로 원하는 지역을 입력 받아 10개의 아파트 추천 list를 출력
+```
+==================================================
+지역 선택: 예측 결과를 볼 **시도명**을 선택해주세요.
+0: 프로그램 종료
+==================================================
+1: 강원도
+2: 경기도
+3: 경상남도
+4: 경상북도
+5: 광주광역시
+6: 대구광역시
+7: 대전광역시
+8: 부산광역시
+9: 서울특별시
+10: 세종특별자치시
+11: 울산광역시
+12: 인천광역시
+13: 전라남도
+14: 전라북도
+15: 제주특별자치도
+16: 충청남도
+17: 충청북도
+==================================================
+번호를 입력하세요 (0 입력 시 종료): 9
+
+======================================================================
+서울특별시 최대 이익 아파트 추천 결과 (단위: 만 원)
+======================================================================
+**최적 아파트:** 까치마을 (강남구 수서동)
+**전용면적:** 34.44 m²
+**2025년 12월 예상 매입가:** 90,213 만 원
+**2030년 12월 예상 매각가:** 179,330 만 원
+**예상 최대 이익 (5년):** 89,117 만 원
+======================================================================
+
+상위 10개 추천 아파트 목록 (서울특별시, 이익 만 원 기준)
+```
+| 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 예상_최대이익 | 매입예상가_2025_12 | 매각예상가_2030_12 | 
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 서울특별시 | 강남구 | 수서동 | 까치마을 | 34.44 | 89,117 | 90,213 | 179,330 |
+| 서울특별시 | 강남구 | 수서동 | 까치마을 | 39.60 | 81,822 | 101,069 | 182,891 |
+| 서울특별시 | 강남구 | 개포동 | 성원대치2단지아파트 | 33.18 | 80,761 | 105,094 | 185,855 |
+| 서울특별시 | 강남구 | 수서동 | 신동아 | 33.18  79,574 | | 99,834 | 179,408 |
+| 서울특별시 | 강남구 | 개포동 | 삼익대청아파트 | 39.53 | 77,611 | 116,341 | 193,952 |
+| 서울특별시 | 강남구 | 수서동 | 까치마을 | 49.50  74,225 | 119,069 | 193,294 |
+| 서울특별시 | 강남구 | 개포동 | 성원대치2단지아파트 | 39.53 | 73,466 | 116,127 | 189,593 |
+| 서울특별시 | 강남구 | 수서동 | 신동아 | 39.51 | 72,278 | 109,512 | 181,790 |
+| 서울특별시 | 강남구 | 일원동 | 수서 | 39.98 | 72,021 | 100,727 | 172,748 |
+
+![추천1등](./results/TS_BEST_서울특별시_강남구_수서동_까치마을_34_44m2_png.png)
+![추천2~10등](./results/Combined_Top9_Trends_서울특별시.png)
+
