@@ -16,7 +16,7 @@ from xgboost import XGBRegressor
 from PIL import Image
 
 # --- 설정 변수 ---
-# 모델 및 전처리 파일 저장 폴더
+# 모델 및 Load 파일 저장 폴더
 TRAINED_DATA_DIR = 'trained_data'
 MODEL_FILE_PATH = os.path.join(TRAINED_DATA_DIR, 'xgb_apartment_model.joblib')
 PRELOAD_FILE_PATH = os.path.join(TRAINED_DATA_DIR, 'preload_xgb_data.csv')
@@ -328,7 +328,7 @@ if not os.path.exists(PLOT_OUTPUT_DIR):
 data_dir = './preprocessed'
 data_csv_path = prepare_csv_from_zip(data_dir, 'KoreaApartDeal_PreProcessed.csv', 'KoreaApartDeal_PreProcessed.zip')
 
-# --- 3. 데이터 전처리 및 특성 공학 (저장/로드 로직) ---
+# --- 3. 데이터 Load (저장/로드 로직) ---
 # UniqueID를 생성하는 코드가 원본 코드에 포함되어 있지 않아, 원본 데이터 로드 시점(SHOULD_RETRAIN == True)에 수행하는 것이 안전합니다.
 
 if (os.path.exists(PRELOAD_FILE_PATH) and
@@ -336,22 +336,22 @@ if (os.path.exists(PRELOAD_FILE_PATH) and
         not SHOULD_RETRAIN):
     # 로드 로직
     # ... (생략: 이전 코드와 동일)
-    print(f"\n전처리된 파일 발견: '{PRELOAD_FILE_PATH}'. 파일을 로드합니다.")
+    print(f"\nLoad 파일 발견: '{PRELOAD_FILE_PATH}'. 파일을 로드합니다.")
     try:
         dtype_spec_loaded = {col: 'int' for col in ['시도명', '시군구명', '법정동', '아파트']}
         df = pd.read_csv(PRELOAD_FILE_PATH, dtype=dtype_spec_loaded)
         df['거래일'] = pd.to_datetime(df['거래일'])
         label_encoders = joblib.load(ENCODERS_FILE_PATH)
         base_deal_date = df['거래일'].min()
-        print("전처리된 데이터 및 LabelEncoder 로드 완료.")
+        print("Load 데이터 및 LabelEncoder 로드 완료.")
     except Exception as e:
-        print(f"파일 로드 오류: {e}. 새로 전처리를 시작합니다.")
+        print(f"파일 로드 오류: {e}. 새로 Load를 시작합니다.")
         SHOULD_RETRAIN = True
 else:
     SHOULD_RETRAIN = True
 
 if SHOULD_RETRAIN:
-    print("\nXGBoost를 위한 데이터 전처리 시작...")
+    print("\nXGBoost를 위한 데이터 Load 시작...")
     try:
         dtype_spec = {'층': 'object'}
         df = pd.read_csv(data_csv_path, dtype=dtype_spec)
@@ -379,12 +379,6 @@ if SHOULD_RETRAIN:
     base_deal_date = df['거래일'].min()
     df['최근_거래일_점수'] = (df['거래일'] - base_deal_date).dt.days
 
-    # **UniqueID 생성 (필수)**
-    # df['UniqueID'] = df.apply(
-    #     lambda row: f"{row['시도명']}_{row['시군구명']}_{row['법정동']}_{row['아파트']}_{row['전용면적']:.2f}_{row['건축년도']}}",
-    #     axis=1
-    # )
-
     # 최소 거래 횟수 필터링
     apt_counts = df['UniqueID'].value_counts()
     valid_uids = apt_counts[apt_counts >= MIN_TRANSACTION_COUNT].index
@@ -400,13 +394,13 @@ if SHOULD_RETRAIN:
         df[col] = le.fit_transform(df[col])
         label_encoders[col] = le
 
-    # 전처리 완료된 파일 저장
+    # Load 완료된 파일 저장
     try:
         df.to_csv(PRELOAD_FILE_PATH, index=False, encoding='utf-8')
         joblib.dump(label_encoders, ENCODERS_FILE_PATH)
-        print(f"전처리된 데이터와 인코더가 '{TRAINED_DATA_DIR}'에 저장되었습니다.")
+        print(f"Load된 데이터와 인코더가 '{TRAINED_DATA_DIR}'에 저장되었습니다.")
     except Exception as e:
-        print(f"전처리 파일 저장 오류: {e}")
+        print(f"Load 파일 저장 오류: {e}")
 
 features = ['시도명', '시군구명', '법정동', '아파트', '전용면적',
             '건축년도', '거래_년', '거래_월', '건축_경과년수', '최근_거래일_점수']  # 층을 빼고 예측에 사용 (UniqueID에 포함됨)
