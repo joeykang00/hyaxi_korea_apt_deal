@@ -328,5 +328,9 @@ sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
 | 서울특별시 | 강남구 | 일원동 | 수서 | 39.98 | 72,021 | 100,727 | 172,748 |
 
 ![추천1등](./results/TS_BEST_서울특별시_강남구_수서동_까치마을_34_44m2_png.png)
+
 ![추천2~10등](./results/Combined_Top9_Trends_서울특별시.png)
 
+
+
+# 7. Lesson & Learn
