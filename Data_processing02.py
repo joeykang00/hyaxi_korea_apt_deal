@@ -116,6 +116,27 @@ def find_file_by_pattern(data_dir: str, pattern: str) -> str:
 
     return matches[0]
 
+def reduce_memory_usage(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    DataFrame의 컬럼들을 가능한 작은 dtype으로 다운캐스팅해서
+    메모리 사용량을 줄여줌.
+    """
+    start_mem = df.memory_usage().sum() / 1024**2
+
+    for col in df.columns:
+        col_type = df[col].dtype
+
+        # 숫자형만 다운캐스트
+        if str(col_type)[:3] == 'int':
+            df[col] = pd.to_numeric(df[col], downcast='integer')
+        elif str(col_type)[:5] == 'float':
+            df[col] = pd.to_numeric(df[col], downcast='float')
+
+    end_mem = df.memory_usage().sum() / 1024**2
+    print(f"Memory reduced: {start_mem:.3f} MB → {end_mem:.3f} MB")
+
+    return df
+
 # ======================================================================
 # 1) 기준금리 데이터
 # ======================================================================
@@ -277,14 +298,15 @@ def load_cpi(data_dir: str) -> pd.DataFrame:
 # ======================================================================
 
 def load_household_loan(data_dir: str) -> pd.DataFrame:
-    # path = os.path.join(data_dir, "*_대출금(말잔).csv")
+    # 예: ECOS_가계대출.csv 같은 이름
     path = find_file_by_pattern(data_dir, "*_가계대출.csv")
 
     df = pd.read_csv(path, encoding="UTF-8-SIG")
 
-    # 계정항목이 '원화대출금' 인 행만
-    df = df[df["계정항목"].str.contains("원화대출금", na=False)]
+    # '예금은행'만 사용
+    df = df[df["계정항목"].str.contains("예금은행", na=False)]
 
+    # 날짜 컬럼 (앞쪽 5개 컬럼 이후부터가 날짜)
     date_cols = df.columns[5:]
 
     melted = df.melt(
@@ -294,25 +316,30 @@ def load_household_loan(data_dir: str) -> pd.DataFrame:
         value_name="대출금액",
     )
 
+    # 날짜 변환: "YYYY/MM" → 월초 날짜
     melted["날짜"] = pd.to_datetime(
         melted["날짜"].astype(str),
         format="%Y/%m",
         errors="coerce",
     ) + pd.offsets.MonthBegin(0)
 
+    # 숫자형 변환
+    melted["대출금액"] = pd.to_numeric(
+        melted["대출금액"].astype(str).str.replace(",", ""),
+        errors="coerce",
+    )
 
-    # 6. 숫자형 변환
-    melted["대출금액"] = pd.to_numeric(melted["대출금액"].astype(str).str.replace(",", ""),
-                                errors="coerce")
-    
+    # 날짜 = index, 지역코드 = columns
     household_loan_df = (
-        melted.pivot(index="날짜", columns="지역코드", values="대출금액")
+        melted.pivot_table(
+            index="날짜",
+            columns="지역코드",
+            values="대출금액",
+            aggfunc="first",  # 중복 처리
+        )
         .sort_index()
         .reset_index()
     )
-
-    for c in household_loan_df.columns[1:]:
-        household_loan_df[c] = pd.to_numeric(household_loan_df[c], errors="coerce")
 
     return household_loan_df
 
@@ -413,7 +440,7 @@ def load_apartment_deal_and_location(data_dir: str):
     loc_csv_path = prepare_csv_from_zip(data_dir, "LocationCode.csv", "LocationCode.zip")
 
     try:
-        deal_df = pd.read_csv(deal_csv_path)
+        deal_df = pd.read_csv(deal_csv_path, low_memory=False)
         location_df = pd.read_csv(
             loc_csv_path,
             dtype={"법정동코드": str, "읍면동명": str, "리명": str},
@@ -487,6 +514,9 @@ def load_apartment_deal_and_location(data_dir: str):
     final_columns_exist = [col for col in final_columns if col in final_df.columns]
     final_df = final_df[final_columns_exist]
 
+    # 🔥 다운캐스팅 적용
+    final_df = reduce_memory_usage(final_df)
+
     print("\n'UniqueID' and final:")
     print(final_df)
 
@@ -506,6 +536,15 @@ def build_apt_price_with_macro():
     household_loan_df = load_household_loan(DATA_DIR)
     bank_loan_df = load_bank_loan(DATA_DIR)
     income_df = load_income(DATA_DIR)
+
+    # 🔥 다운캐스팅
+    rate_df = reduce_memory_usage(rate_df)
+    population_df = reduce_memory_usage(population_df)
+    unemployment_df = reduce_memory_usage(unemployment_df)
+    cpi_df = reduce_memory_usage(cpi_df)
+    household_loan_df = reduce_memory_usage(household_loan_df)
+    bank_loan_df = reduce_memory_usage(bank_loan_df)
+    income_df = reduce_memory_usage(income_df)
 
     # 시도명/열 표준화
     df1 = standardize_columns(household_loan_df)
@@ -571,7 +610,7 @@ def build_apt_price_with_macro():
     loan_long = df6.melt(
         id_vars=["날짜"],
         var_name="시도명",
-        value_name="가계대출(만원)",
+        value_name="은행대출(만원)",
     )
 
     apt_price_df = pd.merge(
@@ -645,6 +684,9 @@ def build_apt_price_with_macro():
         how="left",
     ).drop(columns=["날짜"])
 
+
+    apt_price_df = reduce_memory_usage(apt_price_df)
+    
     return apt_price_df
 
 
@@ -656,3 +698,8 @@ if __name__ == "__main__":
     apt_price_df = build_apt_price_with_macro()
     print("\n[완료] 매크로 변수까지 합쳐진 아파트 거래 데이터:")
     print(apt_price_df.head())
+
+    output_path = os.path.join(DATA_DIR, "merged.csv")
+    apt_price_df.to_csv(output_path, index=False)
+
+    print(f"\nCSV 저장 완료: {output_path}")
