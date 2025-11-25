@@ -1,6 +1,7 @@
 import os
 import re
 import zipfile
+from glob import glob
 
 import numpy as np
 import pandas as pd
@@ -94,13 +95,34 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.reindex(columns=COLUMNS_STANDARD)
     return df
 
+def find_file_by_pattern(data_dir: str, pattern: str) -> str:
+    """
+    data_dir 안에서 pattern(*.csv 등)에 매칭되는 파일을 찾아서
+    하나만 있으면 그 경로를 반환.
+    없거나 여러 개면 에러 메시지 출력 후 종료.
+    """
+    search_pattern = os.path.join(data_dir, pattern)
+    matches = glob(search_pattern)
+
+    if len(matches) == 0:
+        print(f"[Error] No file matched pattern: {search_pattern}")
+        exit()
+    elif len(matches) > 1:
+        print(f"[Error] Multiple files matched pattern: {search_pattern}")
+        for m in matches:
+            print(" -", m)
+        print("패턴에 하나만 매칭되도록 파일명을 정리해 주세요.")
+        exit()
+
+    return matches[0]
 
 # ======================================================================
 # 1) 기준금리 데이터
 # ======================================================================
 
 def load_base_rate(data_dir: str) -> pd.DataFrame:
-    path = os.path.join(data_dir, "ECOS_기준금리.csv")
+    # path = os.path.join(data_dir, "*_기준금리.csv")
+    path = find_file_by_pattern(data_dir, "*_기준금리.csv")
     rate_csv = pd.read_csv(path, low_memory=False)
 
     rate_row = rate_csv.iloc[0, 4:]  # 첫 행에서 5번째 열부터 날짜 구간만
@@ -119,7 +141,8 @@ def load_base_rate(data_dir: str) -> pd.DataFrame:
 # ======================================================================
 
 def load_population(data_dir: str) -> pd.DataFrame:
-    path = os.path.join(data_dir, "KOSIS_행정구역별_성별_인구수.csv")
+    # path = os.path.join(data_dir, "*_인구수.csv")
+    path = find_file_by_pattern(data_dir, "*_인구수.csv")
 
     population_csv = pd.read_csv(
         path,
@@ -161,7 +184,8 @@ def load_population(data_dir: str) -> pd.DataFrame:
 # ======================================================================
 
 def load_unemployment(data_dir: str) -> pd.DataFrame:
-    path = os.path.join(data_dir, "KOSIS_행정구역별_성별_실업률.csv")
+    # path = os.path.join(data_dir, "*_실업률.csv")
+    path = find_file_by_pattern(data_dir, "*_실업률.csv")
 
     unemployment_csv = pd.read_csv(
         path,
@@ -217,7 +241,8 @@ def load_unemployment(data_dir: str) -> pd.DataFrame:
 # ======================================================================
 
 def load_cpi(data_dir: str) -> pd.DataFrame:
-    path = os.path.join(data_dir, "ECOS_소비자물가지수.csv")
+    # path = os.path.join(data_dir, "*_소비자물가지수.csv")
+    path = find_file_by_pattern(data_dir, "*_소비자물가지수.csv")
     price_csv = pd.read_csv(path, encoding="UTF-8-SIG")
 
     # 0행, 1행 + 5번째 열 이후 (날짜 컬럼들만)
@@ -252,7 +277,52 @@ def load_cpi(data_dir: str) -> pd.DataFrame:
 # ======================================================================
 
 def load_household_loan(data_dir: str) -> pd.DataFrame:
-    path = os.path.join(data_dir, "ECOS_예금은행_지역별_대출금_말잔.csv")
+    # path = os.path.join(data_dir, "*_대출금(말잔).csv")
+    path = find_file_by_pattern(data_dir, "*_가계대출.csv")
+
+    df = pd.read_csv(path, encoding="UTF-8-SIG")
+
+    # 계정항목이 '원화대출금' 인 행만
+    df = df[df["계정항목"].str.contains("원화대출금", na=False)]
+
+    date_cols = df.columns[5:]
+
+    melted = df.melt(
+        id_vars=["지역코드"],
+        value_vars=date_cols,
+        var_name="날짜",
+        value_name="대출금액",
+    )
+
+    melted["날짜"] = pd.to_datetime(
+        melted["날짜"].astype(str),
+        format="%Y/%m",
+        errors="coerce",
+    ) + pd.offsets.MonthBegin(0)
+
+
+    # 6. 숫자형 변환
+    melted["대출금액"] = pd.to_numeric(melted["대출금액"].astype(str).str.replace(",", ""),
+                                errors="coerce")
+    
+    household_loan_df = (
+        melted.pivot(index="날짜", columns="지역코드", values="대출금액")
+        .sort_index()
+        .reset_index()
+    )
+
+    for c in household_loan_df.columns[1:]:
+        household_loan_df[c] = pd.to_numeric(household_loan_df[c], errors="coerce")
+
+    return household_loan_df
+
+# ======================================================================
+# 6) 은헹대출 데이터
+# ======================================================================
+
+def load_bank_loan(data_dir: str) -> pd.DataFrame:
+    # path = os.path.join(data_dir, "*_대출금(말잔).csv")
+    path = find_file_by_pattern(data_dir, "*_은행대출.csv")
 
     df = pd.read_csv(path, encoding="EUC-KR")
 
@@ -274,24 +344,24 @@ def load_household_loan(data_dir: str) -> pd.DataFrame:
         errors="coerce",
     ) + pd.offsets.MonthBegin(0)
 
-    household_loan_df = (
+    bank_loan_df = (
         melted.pivot(index="날짜", columns="지역코드별", values="대출금액")
         .sort_index()
         .reset_index()
     )
 
-    for c in household_loan_df.columns[1:]:
-        household_loan_df[c] = pd.to_numeric(household_loan_df[c], errors="coerce")
+    for c in bank_loan_df.columns[1:]:
+        bank_loan_df[c] = pd.to_numeric(bank_loan_df[c], errors="coerce")
 
-    return household_loan_df
-
+    return bank_loan_df
 
 # ======================================================================
-# 6) 개인소득 데이터
+# 7) 개인소득 데이터
 # ======================================================================
 
 def load_income(data_dir: str) -> pd.DataFrame:
-    path = os.path.join(data_dir, "KOSIS_시도별_개인소득.csv")
+    # path = os.path.join(data_dir, "*_개인소득.csv")
+    path = find_file_by_pattern(data_dir, "*_개인소득.csv")
 
     income_csv = pd.read_csv(path, encoding="EUC-KR", header=[0, 1])
 
@@ -335,7 +405,7 @@ def load_income(data_dir: str) -> pd.DataFrame:
 
 
 # ======================================================================
-# 7) 아파트 실거래 + 위치코드 데이터 로드
+# 8) 아파트 실거래 + 위치코드 데이터 로드
 # ======================================================================
 
 def load_apartment_deal_and_location(data_dir: str):
@@ -434,16 +504,18 @@ def build_apt_price_with_macro():
     unemployment_df = load_unemployment(DATA_DIR)
     cpi_df = load_cpi(DATA_DIR)
     household_loan_df = load_household_loan(DATA_DIR)
+    bank_loan_df = load_bank_loan(DATA_DIR)
     income_df = load_income(DATA_DIR)
 
     # 시도명/열 표준화
     df1 = standardize_columns(household_loan_df)
     df2 = standardize_columns(population_df)
     df3 = standardize_columns(unemployment_df)
-    df6 = standardize_columns(income_df)
+    df6 = standardize_columns(bank_loan_df)
+    df7 = standardize_columns(income_df)
 
     # 날짜 형식 통일
-    for df_tmp in [df1, df2, df3, rate_df, cpi_df, df6]:
+    for df_tmp in [df1, df2, df3, rate_df, cpi_df, df6, df7]:
         df_tmp["날짜"] = pd.to_datetime(df_tmp["날짜"], errors="coerce")
 
     # 아파트 실거래/위치 데이터
@@ -480,6 +552,23 @@ def build_apt_price_with_macro():
     # 가계대출금 합치기
     # -------------------------
     loan_long = df1.melt(
+        id_vars=["날짜"],
+        var_name="시도명",
+        value_name="가계대출(만원)",
+    )
+
+    apt_price_df = pd.merge(
+        apt_price_df,
+        loan_long,
+        left_on=["월기준", "시도명"],
+        right_on=["날짜", "시도명"],
+        how="left",
+    ).drop(columns=["날짜"])
+
+        # -------------------------
+    # 은행대출금 합치기
+    # -------------------------
+    loan_long = df6.melt(
         id_vars=["날짜"],
         var_name="시도명",
         value_name="가계대출(만원)",
@@ -542,7 +631,7 @@ def build_apt_price_with_macro():
     # -------------------------
     # 개인소득 합치기
     # -------------------------
-    income_long = df6.melt(
+    income_long = df7.melt(
         id_vars=["날짜"],
         var_name="시도명",
         value_name="월개인소득(만원)",
