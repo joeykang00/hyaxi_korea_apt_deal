@@ -10,8 +10,14 @@
 - 대한민국 아파트 실거래 데이터셋을 머신러닝을 이용하여 학습시키고 매매 투자시 가장 큰 이익을 가져다 주는 아파트를 예측
 
 # 2. Dataset
-- 'KoreaApartDeal.csv'  01/15/2015 ~ 04/30/2023 (425MB) from Kaggle
-- 'LocationCode.csv' (3.8MB) from 공공데이터 
+- 아파트 실거래가 데이터 'KoreaApartDeal.csv'  01/15/2015 ~ 04/30/2023 (425MB) from Kaggle
+- 국가지역코드 (공공데이터)
+- 행정구역 별 인구수 (KOSIS)
+- 행정구역 별 실업률 (KOSIS)
+- 시도 별 1인당 개인소독(KOSIS)
+- 소비자물가지수(ECOS)
+- 예금은행 지역별 가계대출(말잔) (ECOS)
+- 한국은행 기준금리 (ECOS)
 
 # 3. Pre-Processing
 - Environment
