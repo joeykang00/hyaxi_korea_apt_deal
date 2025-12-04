@@ -19,7 +19,7 @@
 - 예금은행 지역별 가계대출(말잔) (ECOS)
 - 한국은행 기준금리 (ECOS)
 
-# 3. Pre-Processing
+# 3. Data PreProcessing
 - Environment
     - python 3.11
     - pip install pandas matplotlib glob PIL
@@ -196,7 +196,7 @@ final_df.drop(columns=['거래일_정리'], inplace=True)
 
 ```
 
-# 4. PreProcessed Data Visialization
+# 4. Data Visialization
 - 년도별 거래량 추이
 ![년도별 거래량 추이](./preprocessed/거래일별_거래건수_추이.png)
 
