@@ -576,10 +576,6 @@ def load_apartment_deal_and_location(data_dir: str):
     return final_df
 
 
-# ======================================================================
-# 8) 전체 머지 파이프라인
-# ======================================================================
-
 def build_apt_price_with_macro():
     # 매크로 데이터 로드
     rate_df = load_base_rate(DATA_DIR)

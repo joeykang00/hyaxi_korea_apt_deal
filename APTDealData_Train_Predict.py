@@ -21,7 +21,7 @@ PRELOAD_FILE_PATH = os.path.join(TRAINED_DATA_DIR, 'preload_xgb_data.csv')
 ENCODERS_FILE_PATH = os.path.join(TRAINED_DATA_DIR, 'label_encoders.joblib')
 PLOT_OUTPUT_DIR = 'results'  # 그래프 및 추천 결과 저장 폴더
 
-SHOULD_RETRAIN = True
+SHOULD_RETRAIN = False
 MIN_TRANSACTION_COUNT = 100  # 최소 거래 횟수 필터링 기준
 cat_features = ['시도명', '시군구명', '법정동', '아파트']
 
@@ -213,29 +213,29 @@ def plot_apartment_timeseries(unique_id, original_df, reco_df, model, base_date,
     plot_past_df = past_df[['거래일', '거래금액']].copy()
     plot_past_df['거래일'] = pd.to_datetime(plot_past_df['거래일'])
 
-    marker_2025 = future_df[future_df['거래일'] == '2025-12-01']
-    marker_2030 = future_df[future_df['거래일'] == '2030-12-01']
+    marker_buy = future_df[future_df['거래일'] == '2026-01-01']
+    marker_sell = future_df[future_df['거래일'] == '2030-01-01']
 
     plt.figure(figsize=(14, 7))
     sns.lineplot(x='거래일', y='거래금액', data=future_df, label='예상 가격 시계열', color='orange', linestyle='--', linewidth=2)
     sns.scatterplot(x='거래일', y='거래금액', data=plot_past_df, label='과거 실제 거래 가격', color='blue', s=50, zorder=5)
 
-    if not marker_2025.empty:
-        m25 = marker_2025.iloc[0]
-        plt.scatter(m25['거래일'], m25['거래금액'], color='red', s=100, zorder=10, label='2025년 12월 매입 예상가')
+    if not marker_buy.empty:
+        mbuy = marker_buy.iloc[0]
+        plt.scatter(mbuy['거래일'], mbuy['거래금액'], color='red', s=100, zorder=10, label='2026년 1월 매입 예상가')
         plt.annotate(
-            f'매입 예상가: {format_manwon(m25["거래금액"])}',
-            (m25['거래일'], m25['거래금액']),
+            f'매입 예상가: {format_manwon(mbuy["거래금액"])}',
+            (mbuy['거래일'], mbuy['거래금액']),
             textcoords="offset points",
             xytext=(-30, 15), ha='center', color='red', fontsize=10,
             bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.5)
         )
-    if not marker_2030.empty:
-        m30 = marker_2030.iloc[0]
-        plt.scatter(m30['거래일'], m30['거래금액'], color='green', s=100, zorder=10, label='2030년 12월 매각 예상가')
+    if not marker_sell.empty:
+        msell = marker_sell.iloc[0]
+        plt.scatter(msell['거래일'], msell['거래금액'], color='green', s=100, zorder=10, label='2030년 1월 매각 예상가')
         plt.annotate(
-            f'매각 예상가: {format_manwon(m30["거래금액"])}',
-            (m30['거래일'], m30['거래금액']),
+            f'매각 예상가: {format_manwon(msell["거래금액"])}',
+            (msell['거래일'], msell['거래금액']),
             textcoords="offset points",
             xytext=(30, 15), ha='center', color='green', fontsize=10,
             bbox=dict(boxstyle="round,pad=0.3", fc="lightgreen", alpha=0.5)
@@ -324,11 +324,87 @@ def combine_images_to_grid(input_dir, output_filename, except_filename, grid_siz
     resized_image.save(output_path, dpi=(150, 150))
     print(f"--- Successfully combined and resized {num_images_to_combine} images into '{output_path}' ---")
 
-    # 병합에 사용된 개별 파일 삭제
-    print("Deleting temporary individual plot files...")
-    for filename in image_files[:num_images_to_combine]:
-        os.remove(os.path.join(input_dir, filename))
-    print("Temporary files deleted.")
+    # # 병합에 사용된 개별 파일 삭제
+    # print("Deleting temporary individual plot files...")
+    # for filename in image_files[:num_images_to_combine]:
+    #     os.remove(os.path.join(input_dir, filename))
+    # print("Temporary files deleted.")
+
+
+def predict_region(df, selected_sido, xgb_model, features, cat_features, label_encoders, base_deal_date):
+
+    encoded_sido = label_encoders['시도명'].transform([selected_sido])[0]
+
+    region_df = df[df['시도명'] == encoded_sido].copy()
+
+    all_unique_apts = region_df.drop_duplicates(subset=['UniqueID']).reset_index(drop=True)
+    total = len(all_unique_apts)
+    print(f"\n[{selected_sido}] 지역의 {total}개 고유 아파트에 대해 예측 데이터 생성 시작.")
+
+    predict_date_buy = pd.to_datetime('2026-01-01')
+    predict_date_sell = pd.to_datetime('2030-01-01')
+
+    records = []
+
+    for idx, apt in all_unique_apts.iterrows():
+        apt_id = apt['UniqueID']
+        past_df = region_df[region_df['UniqueID'] == apt_id].copy()
+        if past_df.empty:
+            continue
+
+        # 진행상황 표시
+        print(f"\r[ {idx + 1} / {total} ] 처리 중...", end='')
+
+        base_row = past_df.sort_values(by='거래일', ascending=True).iloc[-1].copy()
+
+        encoded_values = {
+            'UniqueID': apt_id,
+            '시도명': base_row['시도명'],
+            '시군구명': base_row['시군구명'],
+            '법정동': base_row['법정동'],
+            '아파트': base_row['아파트'],
+            '전용면적': base_row['전용면적'],
+            '건축년도': base_row['건축년도'],
+            '기준금리': base_row['기준금리'],
+            '가계대출(만원)': base_row['가계대출(만원)'],
+            '인구수': base_row['인구수'],
+            '실업률': base_row['실업률'],
+            'CPI_총지수': base_row['CPI_총지수'],
+            'CPI_전년동기': base_row['CPI_전년동기'],
+            '월개인소득(만원)': base_row['월개인소득(만원)'],
+        }
+
+        def make_feature_row(date):
+            row = encoded_values.copy()
+            row['거래_년'] = date.year
+            row['거래_월'] = date.month
+            row['건축_경과년수'] = date.year - base_row['건축년도']
+            row['최근_거래일_점수'] = (date - base_deal_date).days
+            return row
+
+        buy_X = pd.DataFrame([make_feature_row(predict_date_buy)])[features]
+        sell_X = pd.DataFrame([make_feature_row(predict_date_sell)])[features]
+
+        buy_price = int(xgb_model.predict(buy_X)[0])
+        sell_price = int(xgb_model.predict(sell_X)[0])
+
+        record = encoded_values.copy()
+        record['매입예상가_2026_01'] = buy_price
+        record['매각예상가_2030_01'] = sell_price
+        record['예상_최대이익'] = sell_price - buy_price
+        records.append(record)
+
+    print("\n모델 예측 완료. 결과 DataFrame 구성 중...")
+
+    reco_df = pd.DataFrame(records)
+
+    for col in cat_features:
+        if col in reco_df.columns:
+            reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
+
+    reco_df = reco_df.sort_values(by='예상_최대이익', ascending=False).reset_index(drop=True)
+    print(f"[{selected_sido}] 지역 예측 완료. 총 {len(reco_df)}개 결과 생성.")
+    return reco_df
 
 
 if __name__ == "__main__":
@@ -445,52 +521,13 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"error: {e}")
 
-    # 전국 예측 데이터 생성
-    all_unique_apts = df.drop_duplicates(
-        subset=['UniqueID']
-    ).reset_index(drop=True).copy()
-    print(f"\n전국 {len(all_unique_apts)}개 고유 아파트에 대해 예측 데이터 생성 시작.")
-
-    predict_date_2025 = pd.to_datetime('2025-12-01')
-    predict_date_2030 = pd.to_datetime('2030-12-01')
-
-    base_cols = ['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']
-    buy_X = all_unique_apts[base_cols].copy()
-    buy_X['거래_년'] = predict_date_2025.year
-    buy_X['거래_월'] = predict_date_2025.month
-    buy_X['건축_경과년수'] = buy_X['거래_년'] - buy_X['건축년도']
-    buy_X['최근_거래일_점수'] = (predict_date_2025 - base_deal_date).days
-
-    sell_X = all_unique_apts[base_cols].copy()
-    sell_X['거래_년'] = predict_date_2030.year
-    sell_X['거래_월'] = predict_date_2030.month
-    sell_X['건축_경과년수'] = sell_X['거래_년'] - sell_X['건축년도']
-    sell_X['최근_거래일_점수'] = (predict_date_2030 - base_deal_date).days
-
-    buy_X_model = buy_X[features]
-    sell_X_model = sell_X[features]
-
-    print("\n모델 예측 수행 시작 (전국)...")
-    buy_prices_2025 = xgb_model.predict(buy_X_model)
-    sell_prices_2030 = xgb_model.predict(sell_X_model)
-    print("모델 예측 완료.")
-
-    reco_df = all_unique_apts[['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']].copy()
-    reco_df['매입예상가_2025_12'] = buy_prices_2025.astype(int)
-    reco_df['매각예상가_2030_12'] = sell_prices_2030.astype(int)
-    reco_df['예상_최대이익'] = reco_df['매각예상가_2030_12'] - reco_df['매입예상가_2025_12']
-
-    for col in cat_features:
-        reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
-
-    reco_df = reco_df.sort_values(by='예상_최대이익', ascending=False).reset_index(drop=True)
-
-    sido_list = sorted(reco_df['시도명'].unique())
+    decoded_sido = pd.Series(label_encoders['시도명'].inverse_transform(df['시도명'].astype(int)))
+    sido_list = sorted(decoded_sido.unique())
     sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
 
     while True:
         print("\n" + "=" * 50)
-        print("지역 선택: 2025년 12월 매입 기준 2030년 12월 매각시 가장 최대이익을 예측할 지역을 선택해주세요.")
+        print("지역 선택: 2026년 1월 매입 기준 2030년 1월 매각시 가장 최대이익을 예측할 지역을 선택해주세요.")
         print("0: 프로그램 종료")
         print("=" * 50)
         for num, sido in sido_map.items():
@@ -516,6 +553,13 @@ if __name__ == "__main__":
             continue
 
         selected_sido = sido_map[selected_num]
+
+        reco_df = predict_region(df, selected_sido, xgb_model, features, cat_features, label_encoders, base_deal_date)
+
+        if reco_df.empty:
+            print(f"\n경고: {selected_sido} 지역에 대한 예측 결과가 없습니다.")
+            continue
+
         filtered_df = reco_df[reco_df['시도명'] == selected_sido].copy()
 
         if filtered_df.empty:
@@ -525,25 +569,26 @@ if __name__ == "__main__":
         top_10_apts = filtered_df.head(10).copy()
         best_apt = top_10_apts.iloc[0]
 
+
         output_text = "\n" + "=" * 70 + "\n"
         output_text += f"{selected_sido} 최대 이익 아파트 추천 결과 (단위: 만 원)\n"
         output_text += "=" * 70 + "\n"
         output_text += f"**최적 아파트:** {best_apt['아파트']} ({best_apt['시군구명']} {best_apt['법정동']})\n"
         output_text += f"**전용면적:** {best_apt['전용면적']:.2f} m²\n"
-        output_text += f"**2025년 12월 예상 매입가:** {format_manwon(best_apt['매입예상가_2025_12'])}\n"
-        output_text += f"**2030년 12월 예상 매각가:** {format_manwon(best_apt['매각예상가_2030_12'])}\n"
+        output_text += f"**2025년 12월 예상 매입가:** {format_manwon(best_apt['매입예상가_2026_01'])}\n"
+        output_text += f"**2030년 12월 예상 매각가:** {format_manwon(best_apt['매각예상가_2030_01'])}\n"
         output_text += f"**예상 최대 이익 (5년):** {format_manwon(best_apt['예상_최대이익'])}\n"
         output_text += "=" * 70 + "\n"
 
         output_text += f"\n상위 10개 추천 아파트 목록 ({selected_sido}, 이익 만 원 기준)\n"
-        display_cols = ['시도명', '시군구명', '법정동', '아파트', '전용면적', '예상_최대이익', '매입예상가_2025_12', '매각예상가_2030_12']
+        display_cols = ['시도명', '시군구명', '법정동', '아파트', '전용면적', '예상_최대이익', '매입예상가_2026_01', '매각예상가_2030_01']
 
         top_10_string = top_10_apts[display_cols].to_string(
             index=False,
             formatters={
                 '예상_최대이익': '{:,.0f}'.format,
-                '매입예상가_2025_12': '{:,.0f}'.format,
-                '매각예상가_2030_12': '{:,.0f}'.format,
+                '매입예상가_2026_01': '{:,.0f}'.format,
+                '매각예상가_2030_01': '{:,.0f}'.format,
                 '전용면적': '{:.2f}'.format,
             }
         )
@@ -561,8 +606,6 @@ if __name__ == "__main__":
             print(f"추천 결과가 '{recommendation_file_path}'에 저장되었습니다.")
         except Exception as e:
             print(f"error: {e}")
-
-        # 7.4. 상위 10개 아파트 시계열 시각화 함수 호출 및 병합 로직
 
         # 1. 최대 이익 아파트 (top 1) 개별 저장
         print(f"\n최적 아파트 ({best_apt['아파트']}) 시계열 차트 개별 저장...")
@@ -607,5 +650,4 @@ if __name__ == "__main__":
 
         print("#" * 70)
 
-        print("진행하려면 아무키나 입력하세요")
-        input()
+        input("진행하려면 아무키나 입력하세요")
