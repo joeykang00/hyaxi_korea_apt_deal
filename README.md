@@ -532,6 +532,52 @@ print("모델 예측 완료.")
     sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
 ```
 
+- Result Visialization
+    -  seaboarn 이용하여 기존 data와 매매 Prediction 가격을 시각화 표시시
+```python
+    plot_past_df = past_df[['거래일', '거래금액']].copy()
+    plot_past_df['거래일'] = pd.to_datetime(plot_past_df['거래일'])
+
+    marker_2025 = future_df[future_df['거래일'] == '2025-12-01']
+    marker_2030 = future_df[future_df['거래일'] == '2030-12-01']
+
+    plt.figure(figsize=(14, 7))
+    sns.lineplot(x='거래일', y='거래금액', data=future_df, label='예상 가격 시계열', color='orange', linestyle='--', linewidth=2)
+    sns.scatterplot(x='거래일', y='거래금액', data=plot_past_df, label='과거 실제 거래 가격', color='blue', s=50, zorder=5)
+
+    if not marker_2025.empty:
+        m25 = marker_2025.iloc[0]
+        plt.scatter(m25['거래일'], m25['거래금액'], color='red', s=100, zorder=10, label='2025년 12월 매입 예상가')
+        plt.annotate(
+            f'매입 예상가: {format_manwon(m25["거래금액"])}',
+            (m25['거래일'], m25['거래금액']),
+            textcoords="offset points",
+            xytext=(-30, 15), ha='center', color='red', fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.5)
+        )
+    if not marker_2030.empty:
+        m30 = marker_2030.iloc[0]
+        plt.scatter(m30['거래일'], m30['거래금액'], color='green', s=100, zorder=10, label='2030년 12월 매각 예상가')
+        plt.annotate(
+            f'매각 예상가: {format_manwon(m30["거래금액"])}',
+            (m30['거래일'], m30['거래금액']),
+            textcoords="offset points",
+            xytext=(30, 15), ha='center', color='green', fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.3", fc="lightgreen", alpha=0.5)
+        )
+
+    title = f"[{apt_info['시도명']} {apt_info['시군구명']} {apt_info['법정동']}] {apt_info['아파트']} ({apt_info['전용면적']:.2f}m²) 가격 시계열 (단위: 만 원)"
+    plt.title(title, fontsize=16)
+    plt.xlabel("거래일", fontsize=12)
+    plt.ylabel("거래 금액 (만 원)", fontsize=12)
+    plt.gca().get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: format_manwon(x)))
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+```
+
 # 7. Result
 - 시도별로 원하는 지역을 입력 받아 10개의 아파트 추천 list를 출력
 ```
