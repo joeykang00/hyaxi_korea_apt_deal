@@ -21,8 +21,8 @@ PRELOAD_FILE_PATH = os.path.join(TRAINED_DATA_DIR, 'preload_xgb_data.csv')
 ENCODERS_FILE_PATH = os.path.join(TRAINED_DATA_DIR, 'label_encoders.joblib')
 PLOT_OUTPUT_DIR = 'results'  # 그래프 및 추천 결과 저장 폴더
 
-SHOULD_RETRAIN = False
-MIN_TRANSACTION_COUNT = 100  # 최소 거래 횟수 필터링 기준
+SHOULD_RETRAIN = True
+MIN_TRANSACTION_COUNT = 50  # 최소 거래 횟수 필터링 기준
 cat_features = ['시도명', '시군구명', '법정동', '아파트']
 
 # --------------
@@ -580,19 +580,28 @@ if __name__ == "__main__":
         output_text += f"**예상 최대 이익 (5년):** {format_manwon(best_apt['예상_최대이익'])}\n"
         output_text += "=" * 70 + "\n"
 
-        output_text += f"\n상위 10개 추천 아파트 목록 ({selected_sido}, 이익 만 원 기준)\n"
+        output_text += f"\n### 🏙️ 상위 10개 추천 아파트 목록 ({selected_sido}, 이익 만 원 기준)\n\n"
+
         display_cols = ['시도명', '시군구명', '법정동', '아파트', '전용면적', '예상_최대이익', '매입예상가_2026_01', '매각예상가_2030_01']
 
-        top_10_string = top_10_apts[display_cols].to_string(
-            index=False,
-            formatters={
-                '예상_최대이익': '{:,.0f}'.format,
-                '매입예상가_2026_01': '{:,.0f}'.format,
-                '매각예상가_2030_01': '{:,.0f}'.format,
-                '전용면적': '{:.2f}'.format,
-            }
-        )
-        output_text += top_10_string + "\n"
+        # 숫자 포맷 적용
+        top_10_formatted = top_10_apts[display_cols].copy()
+        top_10_formatted['예상_최대이익'] = top_10_formatted['예상_최대이익'].map('{:,.0f}'.format)
+        top_10_formatted['매입예상가_2026_01'] = top_10_formatted['매입예상가_2026_01'].map('{:,.0f}'.format)
+        top_10_formatted['매각예상가_2030_01'] = top_10_formatted['매각예상가_2030_01'].map('{:,.0f}'.format)
+        top_10_formatted['전용면적'] = top_10_formatted['전용면적'].map('{:.2f}'.format)
+
+        # Markdown 표 수동 생성
+        header = "| " + " | ".join(display_cols) + " |"
+        separator = "| " + " | ".join([":---:" for _ in display_cols]) + " |"
+        rows = [
+            "| " + " | ".join(map(str, row)) + " |"
+            for row in top_10_formatted.values
+        ]
+        top_10_md = "\n".join([header, separator] + rows)
+
+        output_text += top_10_md + "\n"
+
         output_text += "\n" + "=" * 70 + "\n"
         output_text += f"결과는 ./{PLOT_OUTPUT_DIR}/{selected_sido}_APT_Recommendation.txt 파일로 저장되었습니다.\n"
         output_text += "최적 아파트는 개별 PNG 파일로, 나머지 9개는 하나의 PNG 파일로 저장됩니다."
