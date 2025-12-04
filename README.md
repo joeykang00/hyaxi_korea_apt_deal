@@ -430,7 +430,7 @@ def plot_macro_trends(pop_df, unemp_df, cpi_df, household_df, bank_df, rate_df, 
 
  PreProcessed Data를 Load 하고, 거래 횟수가 너무 적은 아파트의 Data는 Train시 부정확성을 높일 우려가 있어, 사전 제거
 ```python
-MIN_TRANSACTION_COUNT = 100  # 최소 거래 횟수 필터링 기준
+MIN_TRANSACTION_COUNT = 50  # 최소 거래 횟수 필터링 기준
 apt_counts = df['UniqueID'].value_counts()
 valid_uids = apt_counts[apt_counts >= MIN_TRANSACTION_COUNT].index
 df = df[df['UniqueID'].isin(valid_uids)].copy()
@@ -490,46 +490,84 @@ joblib.dump(xgb_model, MODEL_FILE_PATH)
     - APTDealData_Train_Predict.py
 
 
-- 매입 시점은 2025년 12월,  매각 시점은 2030년 12월로 고정
-- 매입 시점 이후부터 매각시점까지 월별 가격을 XGBoost 학습데이터로 Prediction
+- 매입 시점은 2026년 1월,  매각 시점은 2030년 1월로 고정
+- 매입 시점 이후부터 매각시점까지 시계열 가격을 XGBoost 학습데이터로 Prediction
 
 ```python
-base_cols = ['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']
-buy_X = all_unique_apts[base_cols].copy()
-buy_X['거래_년'] = predict_date_2025.year
-buy_X['거래_월'] = predict_date_2025.month
-buy_X['건축_경과년수'] = buy_X['거래_년'] - buy_X['건축년도']
-buy_X['최근_거래일_점수'] = (predict_date_2025 - base_deal_date).days
+def predict_region(df, selected_sido, xgb_model, features, cat_features, label_encoders, base_deal_date):
 
-sell_X = all_unique_apts[base_cols].copy()
-sell_X['거래_년'] = predict_date_2030.year
-sell_X['거래_월'] = predict_date_2030.month
-sell_X['건축_경과년수'] = sell_X['거래_년'] - sell_X['건축년도']
-sell_X['최근_거래일_점수'] = (predict_date_2030 - base_deal_date).days
+    encoded_sido = label_encoders['시도명'].transform([selected_sido])[0]
 
-buy_X_model = buy_X[features]
-sell_X_model = sell_X[features]
+    region_df = df[df['시도명'] == encoded_sido].copy()
 
-print("\n모델 예측 수행 시작 (전국)...")
-buy_prices_2025 = xgb_model.predict(buy_X_model)
-sell_prices_2030 = xgb_model.predict(sell_X_model)
-print("모델 예측 완료.")
-```
+    all_unique_apts = region_df.drop_duplicates(subset=['UniqueID']).reset_index(drop=True)
+    total = len(all_unique_apts)
+    print(f"\n[{selected_sido}] 지역의 {total}개 고유 아파트에 대해 예측 데이터 생성 시작.")
 
-- XGBoost로 Prediction된 매각 시점 가격과 매입시점 가격의 차이을 가지고 dataframe 생성
-```python
-    reco_df = all_unique_apts[['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']].copy()
-    reco_df['매입예상가_2025_12'] = buy_prices_2025.astype(int)
-    reco_df['매각예상가_2030_12'] = sell_prices_2030.astype(int)
-    reco_df['예상_최대이익'] = reco_df['매각예상가_2030_12'] - reco_df['매입예상가_2025_12']
+    predict_date_buy = pd.to_datetime('2026-01-01')
+    predict_date_sell = pd.to_datetime('2030-01-01')
+
+    records = []
+
+    for idx, apt in all_unique_apts.iterrows():
+        apt_id = apt['UniqueID']
+        past_df = region_df[region_df['UniqueID'] == apt_id].copy()
+        if past_df.empty:
+            continue
+
+        # 진행상황 표시
+        print(f"\r[ {idx + 1} / {total} ] 처리 중...", end='')
+
+        base_row = past_df.sort_values(by='거래일', ascending=True).iloc[-1].copy()
+
+        encoded_values = {
+            'UniqueID': apt_id,
+            '시도명': base_row['시도명'],
+            '시군구명': base_row['시군구명'],
+            '법정동': base_row['법정동'],
+            '아파트': base_row['아파트'],
+            '전용면적': base_row['전용면적'],
+            '건축년도': base_row['건축년도'],
+            '기준금리': base_row['기준금리'],
+            '가계대출(만원)': base_row['가계대출(만원)'],
+            '인구수': base_row['인구수'],
+            '실업률': base_row['실업률'],
+            'CPI_총지수': base_row['CPI_총지수'],
+            'CPI_전년동기': base_row['CPI_전년동기'],
+            '월개인소득(만원)': base_row['월개인소득(만원)'],
+        }
+
+        def make_feature_row(date):
+            row = encoded_values.copy()
+            row['거래_년'] = date.year
+            row['거래_월'] = date.month
+            row['건축_경과년수'] = date.year - base_row['건축년도']
+            row['최근_거래일_점수'] = (date - base_deal_date).days
+            return row
+
+        buy_X = pd.DataFrame([make_feature_row(predict_date_buy)])[features]
+        sell_X = pd.DataFrame([make_feature_row(predict_date_sell)])[features]
+
+        buy_price = int(xgb_model.predict(buy_X)[0])
+        sell_price = int(xgb_model.predict(sell_X)[0])
+
+        record = encoded_values.copy()
+        record['매입예상가_2026_01'] = buy_price
+        record['매각예상가_2030_01'] = sell_price
+        record['예상_최대이익'] = sell_price - buy_price
+        records.append(record)
+
+    print("\n모델 예측 완료. 결과 DataFrame 구성 중...")
+
+    reco_df = pd.DataFrame(records)
 
     for col in cat_features:
-        reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
+        if col in reco_df.columns:
+            reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
 
     reco_df = reco_df.sort_values(by='예상_최대이익', ascending=False).reset_index(drop=True)
-
-    sido_list = sorted(reco_df['시도명'].unique())
-    sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
+    print(f"[{selected_sido}] 지역 예측 완료. 총 {len(reco_df)}개 결과 생성.")
+    return reco_df
 ```
 
 - Result Visialization
@@ -581,8 +619,16 @@ print("모델 예측 완료.")
 # 7. Result
 - 시도별로 원하는 지역을 입력 받아 10개의 아파트 추천 list를 출력
 ```
+Data load start for XGBoost...
+최소 50회 이상 거래된 아파트로 필터링 후, 남은 거래 기록: 4113429개
+'trained_data\preload_xgb_data.csv' saved.
+
+Model Training Started ..
+XGBoost Model Training Done.
+Trained Model 'trained_data\xgb_apartment_model.joblib' is saved
+
 ==================================================
-지역 선택: 2025년 12월 매입 기준 2030년 12월 매각시 가장 최대이익을 예측할 지역을 선택해주세요.
+지역 선택: 2026년 1월 매입 기준 2030년 1월 매각시 가장 최대이익을 예측할 지역을 선택해주세요.
 0: 프로그램 종료
 ==================================================
 1: 강원
@@ -605,35 +651,54 @@ print("모델 예측 완료.")
 ==================================================
 번호를 입력하세요 (0 입력 시 종료): 9
 
+[서울] 지역의 3402개 고유 아파트에 대해 예측 데이터 생성 시작.
+[ 3402 / 3402 ] 처리 중...
+모델 예측 완료. 결과 DataFrame 구성 중...
+[서울] 지역 예측 완료. 총 3402개 결과 생성.
+
 ======================================================================
 서울 최대 이익 아파트 추천 결과 (단위: 만 원)
 ======================================================================
-**최적 아파트:** 올림픽훼밀리타운 (송파구 문정동)
-**전용면적:** 158.71 m²
-**2025년 12월 예상 매입가:** 118,168 만 원
-**2030년 12월 예상 매각가:** 169,981 만 원
-**예상 최대 이익 (5년):** 51,813 만 원
+**최적 아파트:** 미성 (송파구 신천동)
+**전용면적:** 55.62 m²
+**2025년 12월 예상 매입가:** 142,126 만 원
+**2030년 12월 예상 매각가:** 180,681 만 원
+**예상 최대 이익 (5년):** 38,555 만 원
 ======================================================================
 
-상위 10개 추천 아파트 목록 (서울, 이익 만 원 기준)
-시도명 시군구명 법정동         아파트   전용면적 예상_최대이익 매입예상가_2025_12 매각예상가_2030_12
- 서울  송파구 문정동    올림픽훼밀리타운 158.71  51,813       118,168       169,981
- 서울  송파구 문정동    올림픽훼밀리타운 136.32  51,813        94,873       146,686
- 서울  송파구 방이동 올림픽선수기자촌2단지 126.18  44,710       119,323       164,033
- 서울  송파구 문정동    올림픽훼밀리타운 117.58  44,709        76,903       121,612
- 서울  송파구 오금동          대림 125.79  39,476        88,181       127,657
- 서울  강동구 명일동      현대(고덕) 131.83  39,219        58,428        97,647
- 서울  강동구 명일동        명일우성 133.65  38,772        74,106       112,878
- 서울  노원구 하계동          우성 127.22  29,070        53,333        82,403
- 서울  송파구 방이동 올림픽선수기자촌2단지 100.31  24,068        97,110       121,178
- 서울  송파구 방이동 올림픽선수기자촌3단지 100.31  22,700        97,309       120,009
-
+### 상위 10개 추천 아파트 목록 (서울, 이익 만 원 기준)
+```
+| 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 예상_최대이익 | 매입예상가_2026_01 | 매각예상가_2030_01 |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 서울 | 송파구 | 신천동 | 미성 | 55.62 | 38,555 | 142,126 | 180,681 |
+| 서울 | 강남구 | 수서동 | 까치마을 | 49.50 | 35,340 | 105,075 | 140,415 |
+| 서울 | 강남구 | 수서동 | 까치마을 | 39.60 | 34,766 | 92,483 | 127,249 |
+| 서울 | 동작구 | 대방동 | 대림아파트 | 164.79 | 34,386 | 230,981 | 265,367 |
+| 서울 | 성동구 | 행당동 | 서울숲리버뷰자이 | 84.90 | 34,385 | 152,690 | 187,075 |
+| 서울 | 강남구 | 수서동 | 까치마을 | 34.44 | 34,053 | 82,854 | 116,907 |
+| 서울 | 강남구 | 개포동 | 성원대치2단지아파트 | 49.86 | 33,600 | 120,724 | 154,324 |
+| 서울 | 마포구 | 현석동 | 래미안 웰스트림 | 84.90 | 32,537 | 176,966 | 209,503 |
+| 서울 | 마포구 | 현석동 | 래미안 웰스트림 | 59.96 | 32,423 | 147,502 | 179,925 |
+| 서울 | 강남구 | 개포동 | 성원대치2단지아파트 | 39.53 | 31,903 | 102,322 | 134,225 |
+```
 ======================================================================
 결과는 ./results/서울_APT_Recommendation.txt 파일로 저장되었습니다.
 최적 아파트는 개별 PNG 파일로, 나머지 9개는 하나의 PNG 파일로 저장됩니다.
+추천 결과가 'results\서울_APT_Recommendation.txt'에 저장되었습니다.
+
+최적 아파트 (미성) 시계열 차트 개별 저장...
+
+하위 9개 아파트 시계열 차트 임시 파일 저장 및 병합 시작...
+
+--- Starting to combine plot images into a single grid image ---
+Excluding files starting with 'TS_BEST_서울_송파구_신천동_미성'. 17 images found for combination.
+Creating a new 3x3 grid image with individual size 1400x700...
+Resizing final image to 3000x1800...
+--- Successfully combined and resized 9 images into 'results\Combined_Top9_Trends_서울.png' ---
+######################################################################
 ```
 
-![추천1등](./results/TS_BEST_서울_송파구_문정동_올림픽훼밀리타운_158_71m2_png.png)
+![추천1등](./results/TS_BEST_서울_송파구_신천동_미성_55_62m2_png.png)
 ![추천2~10등](./results/Combined_Top9_Trends_서울.png)
 
 
