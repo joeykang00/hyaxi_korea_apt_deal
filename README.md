@@ -99,7 +99,7 @@ final_df.drop(columns=['거래일_정리'], inplace=True)
     - 예금은행 지역별 가계대출
     - 한국은행 기준금리
 
-[ 아파트 실거래가 Data에 매매 가격 영향 인자를 지역별 시계열로 merge ]
+[ merged 된 최종 preprocessed data ]
 ![Final Preprocessed Merged Data](./documents/merged_data.png)
 
 
