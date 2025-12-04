@@ -19,11 +19,13 @@
 - 예금은행 지역별 가계대출(말잔) (ECOS)
 - 한국은행 기준금리 (ECOS)
 
-# 3. Pre-Processing
+# 3. Data PreProcessing
 - Environment
     - python 3.11
     - pip install pandas matplotlib glob PIL
 
+- Source Code
+    - APTDealData_PreProcessing.py
 
 - 'KoreaApartDeal.csv' Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터 'LocationCode.csv' 를 이용하여 Human Readable Data 로 변경
 - 지역명과 아파트, 전용면적으로 UniqueID로 고유값을 생성하여 Data Processing 및 시각화에 용의하도록 개선
@@ -98,11 +100,8 @@ final_df.drop(columns=['거래일_정리'], inplace=True)
     - 한국은행 기준금리
 
 [ 아파트 실거래가 Data에 매매 가격 영향 인자를 지역별 시계열로 merge ]
-| ... | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 | 층 | 건축년도 | 기준금리 | 가계대출 | 은행대출 | 인구수 | 실업률 | CPI_총지수 | CPI_전년동기 | 월개인소득 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ... | 부산 | 남구 | 대연동 | 일동지에닌 | 84.99 | 2015-01-01 | 27500 | 25 | 2006.0 | 2.0 | 32299.1 | 85291.0 | 3517898 | 4.1 | 94.643 | 1.0 | 155.1 |
-| ... | 경남 | 양산시 | 물금읍 범어리 | 신창비바패밀리 | 84.839 | 2015-01-01 | 24250 | 10 | 2009.0 | 2.0 | 20598.0 | 63095.8 | 3351038 | 2.6 | 94.643 | 1.0 | 147.4 |
-| ... | 부산 | 사하구 | 하단동 | 가락타운1 | 84.96 | 2015-01-01 | 18200 | 19 | 1992.0 | 2.0 | 32299.1 | 85291.0 | 3517898 | 4.1 | 94.643 | 1.0 | 155.1 |
+![Final Preprocessed Merged Data](./documents/merged_data.png)
+
 
 ```python
     # 기준금리 합치기
@@ -199,7 +198,14 @@ final_df.drop(columns=['거래일_정리'], inplace=True)
 
 ```
 
-# 4. PreProcess Data Visialization
+# 4. Data Visialization
+- Environment
+    - python 3.11
+    - pip install pandas matplotlib glob PIL
+
+- Source Code
+    - APTDealData_PreProcessing.py
+
 - 년도별 거래량 추이
 ![년도별 거래량 추이](./preprocessed/거래일별_거래건수_추이.png)
 
@@ -378,17 +384,23 @@ def plot_macro_trends(pop_df, unemp_df, cpi_df, household_df, bank_df, rate_df, 
 ```
 
 # 5. Analysis based on Theory
-- XGBoost Algorithm 적용
-> https://www.ibm.com/kr-ko/think/topics/xgboost
-> ![XGBoost_Introduce](./documents/XGBoost_Introduce.png)
+- XGBoost Algorithm
+
+![XGBoost_Introduce](./documents/XGBoost_Introduce.png)
+
 > XGBoost란?
 >> XGBoost(eXtreme Gradient Boosting)는 경사하강법을 활용하는 지도 학습 부스팅 알고리즘인 그레이디언트 부스트 Decision Trees를 사용하는 분산형 오픈 소스 머신 러닝 라이브러리입니다. 속도, 효율성, 대규모 데이터 세트에 대한 확장성이 뛰어난 것으로 잘 알려져 있음
 >> 워싱턴 대학교의 티안치 첸(Tianqi Chen)이 개발한 XGBoost는 동일한 일반 프레임워크를 사용하여 그레이디언트 부스팅을 고급으로 구현한 것입니다. 즉, 잔차를 더하여 약한 학습기 트리를 강한 학습기로 결합
 
 > Decision Trees와 부스팅 비교
->> - Decision Trees는 머신 러닝에서 분류 또는 회귀 작업에 사용됩니다. 내부 노드는 기능을, 분기는 의사 결정 규칙을, 각 리프 노드는 데이터 세트의 결과를 나타내는 계층적 트리 구조를 사용
->> - Decision Trees는 과적합되기 쉽기 때문에 부스팅과 같은 앙상블 방법을 사용하여 더 견고한 모델을 만들 수 있습니다. 부스팅은 여러 개의 개별 약한 트리, 즉 무작위 확률보다 약간 더 나은 성능을 보이는 모델을 결합하여 강한 학습기를 형성합니다. 각 약한 학습기는 이전 모델에서 발생한 오류를 수정하기 위해 순차적으로 학습합니다. 수백 번의 반복 후 약한 학습기는 강한 학습기로 변환
->> - 랜덤 포레스트와 부스팅 알고리즘은 모두 개별 학습기 트리를 사용하여 예측 성능을 향상하는 인기 있는 앙상블 학습 기법입니다. 랜덤 포레스트는 배깅(부트스트랩 집계) 개념을 기반으로 하며 각 트리를 독립적으로 학습시켜 예측을 결합하지만, 부스팅 알고리즘은 약한 학습기가 순차적으로 학습되어 이전 모델의 실수를 수정하는 가산적 접근 방식을 사용
+>> - Decision Trees는 머신 러닝에서 분류 또는 회귀 작업에 사용
+>> - 내부 노드는 기능을, 분기는 의사 결정 규칙을, 각 리프 노드는 데이터 세트의 결과를 나타내는 계층적 트리 구조를 사용
+>> - Decision Trees는 과적합되기 쉽기 때문에 부스팅과 같은 앙상블 방법을 사용하여 더 견고한 모델을 만들 수 있음
+>> - 부스팅은 여러 개의 개별 약한 트리, 즉 무작위 확률보다 약간 더 나은 성능을 보이는 모델을 결합하여 강한 학습기를 형성
+>> - 각 약한 학습기는 이전 모델에서 발생한 오류를 수정하기 위해 순차적으로 학습.
+>> - 수백 번의 반복 후 약한 학습기는 강한 학습기로 변환
+>> - 랜덤 포레스트와 부스팅 알고리즘은 모두 개별 학습기 트리를 사용하여 예측 성능을 향상하는 인기 있는 앙상블 학습 기법
+>> - 랜덤 포레스트는 배깅(부트스트랩 집계) 개념을 기반으로 하며 각 트리를 독립적으로 학습시켜 예측을 결합하지만, 부스팅 알고리즘은 약한 학습기가 순차적으로 학습되어 이전 모델의 실수를 수정하는 가산적 접근 방식을 사용
 
 > XGBoost의 장점
 >> - 높은 성능 (실제로 Kaggle에서 XGboost가 상위권을 다수 차지)
@@ -406,15 +418,22 @@ def plot_macro_trends(pop_df, unemp_df, cpi_df, household_df, bank_df, rate_df, 
 >> - 학습 속도와 성능의 균형: 병렬 처리와 최적화된 알고리즘 덕분에 빠른 학습 속도와 높은 예측 성능을 동시에 제공
 >> - 특성 중요도 해석 가능: 각 변수의 중요도를 계산할 수 있어, 어떤 요인이 가격에 영향을 미치는지 분석하기 용이
 
+- Environment
+    - python 3.11
+    - pip install pandas numpy scikit-learn xgboost joblib matplotlib seaborn pillow
+
+- Source Code
+    - APTDealData_Train_Predict.py
+
+
 - Data Load
 
  PreProcessed Data를 Load 하고, 거래 횟수가 너무 적은 아파트의 Data는 Train시 부정확성을 높일 우려가 있어, 사전 제거
 ```python
-MIN_TRANSACTION_COUNT = 10  # 최소 거래 횟수 필터링 기준
+MIN_TRANSACTION_COUNT = 100  # 최소 거래 횟수 필터링 기준
 apt_counts = df['UniqueID'].value_counts()
 valid_uids = apt_counts[apt_counts >= MIN_TRANSACTION_COUNT].index
 df = df[df['UniqueID'].isin(valid_uids)].copy()
-print(f"최소 {MIN_TRANSACTION_COUNT}회 이상 거래된 아파트로 필터링 후, 남은 거래 기록: {len(df)}개")
 ```
 
 - XGBoost 입력 전 시도명 등 String 형식의 Data를 LabelEncoder를 통하여 정수형으로 변경
@@ -434,13 +453,12 @@ for col in cat_features:
 X = df[features]
 y = df[target]
 
-features = ['시도명', '시군구명', '법정동', '아파트', '전용면적',
-            '건축년도', '거래_년', '거래_월', '건축_경과년수', '최근_거래일_점수']
+features = ['시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '거래_년', '거래_월', '건축_경과년수', '최근_거래일_점수', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']    
 target = '거래금액'
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 xgb_model = XGBRegressor(
     n_estimators=1000,
-    learning_rate=0.05,
+    learning_rate=0.3,
     max_depth=6,
     random_state=42,
     n_jobs=-1
@@ -464,10 +482,19 @@ joblib.dump(xgb_model, MODEL_FILE_PATH)
 ```
 
 # 6. Prediction
-- 매입 시점은 2025년 12월,  매각 시점은 2030년 12월로 임의 고정 (간단하게 입력 방식으로도 변경 가능)
-- 매입 시점과 매각 시점의 가격을 XGBoost로 Prediction
+- Environment
+    - python 3.11
+    - pip install pandas numpy scikit-learn xgboost joblib matplotlib seaborn pillow
+
+- Source Code
+    - APTDealData_Train_Predict.py
+
+
+- 매입 시점은 2025년 12월,  매각 시점은 2030년 12월로 고정
+- 매입 시점 이후부터 매각시점까지 월별 가격을 XGBoost 학습데이터로 Prediction
+
 ```python
-base_cols = ['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도']
+base_cols = ['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']
 buy_X = all_unique_apts[base_cols].copy()
 buy_X['거래_년'] = predict_date_2025.year
 buy_X['거래_월'] = predict_date_2025.month
@@ -486,78 +513,128 @@ sell_X_model = sell_X[features]
 print("\n모델 예측 수행 시작 (전국)...")
 buy_prices_2025 = xgb_model.predict(buy_X_model)
 sell_prices_2030 = xgb_model.predict(sell_X_model)
+print("모델 예측 완료.")
 ```
 
 - XGBoost로 Prediction된 매각 시점 가격과 매입시점 가격의 차이을 가지고 dataframe 생성
 ```python
-reco_df = all_unique_apts[['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도']].copy()
-reco_df['매입예상가_2025_12'] = buy_prices_2025.astype(int)
-reco_df['매각예상가_2030_12'] = sell_prices_2030.astype(int)
-reco_df['예상_최대이익'] = reco_df['매각예상가_2030_12'] - reco_df['매입예상가_2025_12']
+    reco_df = all_unique_apts[['UniqueID', '시도명', '시군구명', '법정동', '아파트', '전용면적', '건축년도', '기준금리', '가계대출(만원)', '인구수', '실업률', 'CPI_총지수', 'CPI_전년동기', '월개인소득(만원)']].copy()
+    reco_df['매입예상가_2025_12'] = buy_prices_2025.astype(int)
+    reco_df['매각예상가_2030_12'] = sell_prices_2030.astype(int)
+    reco_df['예상_최대이익'] = reco_df['매각예상가_2030_12'] - reco_df['매입예상가_2025_12']
 
-for col in cat_features:
-    reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
+    for col in cat_features:
+        reco_df[col] = label_encoders[col].inverse_transform(reco_df[col].astype(int))
 
-reco_df = reco_df.sort_values(by='예상_최대이익', ascending=False).reset_index(drop=True)
+    reco_df = reco_df.sort_values(by='예상_최대이익', ascending=False).reset_index(drop=True)
 
-sido_list = sorted(reco_df['시도명'].unique())
-sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
+    sido_list = sorted(reco_df['시도명'].unique())
+    sido_map = {i + 1: sido for i, sido in enumerate(sido_list)}
+```
+
+- Result Visialization
+    -  seaboarn 이용하여 기존 data와 매매 Prediction 가격을 시각화 표시시
+```python
+    plot_past_df = past_df[['거래일', '거래금액']].copy()
+    plot_past_df['거래일'] = pd.to_datetime(plot_past_df['거래일'])
+
+    marker_2025 = future_df[future_df['거래일'] == '2025-12-01']
+    marker_2030 = future_df[future_df['거래일'] == '2030-12-01']
+
+    plt.figure(figsize=(14, 7))
+    sns.lineplot(x='거래일', y='거래금액', data=future_df, label='예상 가격 시계열', color='orange', linestyle='--', linewidth=2)
+    sns.scatterplot(x='거래일', y='거래금액', data=plot_past_df, label='과거 실제 거래 가격', color='blue', s=50, zorder=5)
+
+    if not marker_2025.empty:
+        m25 = marker_2025.iloc[0]
+        plt.scatter(m25['거래일'], m25['거래금액'], color='red', s=100, zorder=10, label='2025년 12월 매입 예상가')
+        plt.annotate(
+            f'매입 예상가: {format_manwon(m25["거래금액"])}',
+            (m25['거래일'], m25['거래금액']),
+            textcoords="offset points",
+            xytext=(-30, 15), ha='center', color='red', fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.5)
+        )
+    if not marker_2030.empty:
+        m30 = marker_2030.iloc[0]
+        plt.scatter(m30['거래일'], m30['거래금액'], color='green', s=100, zorder=10, label='2030년 12월 매각 예상가')
+        plt.annotate(
+            f'매각 예상가: {format_manwon(m30["거래금액"])}',
+            (m30['거래일'], m30['거래금액']),
+            textcoords="offset points",
+            xytext=(30, 15), ha='center', color='green', fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.3", fc="lightgreen", alpha=0.5)
+        )
+
+    title = f"[{apt_info['시도명']} {apt_info['시군구명']} {apt_info['법정동']}] {apt_info['아파트']} ({apt_info['전용면적']:.2f}m²) 가격 시계열 (단위: 만 원)"
+    plt.title(title, fontsize=16)
+    plt.xlabel("거래일", fontsize=12)
+    plt.ylabel("거래 금액 (만 원)", fontsize=12)
+    plt.gca().get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: format_manwon(x)))
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
 ```
 
 # 7. Result
 - 시도별로 원하는 지역을 입력 받아 10개의 아파트 추천 list를 출력
 ```
 ==================================================
-지역 선택: 예측 결과를 볼 **시도명**을 선택해주세요.
+지역 선택: 2025년 12월 매입 기준 2030년 12월 매각시 가장 최대이익을 예측할 지역을 선택해주세요.
 0: 프로그램 종료
 ==================================================
-1: 강원도
-2: 경기도
-3: 경상남도
-4: 경상북도
-5: 광주광역시
-6: 대구광역시
-7: 대전광역시
-8: 부산광역시
-9: 서울특별시
-10: 세종특별자치시
-11: 울산광역시
-12: 인천광역시
-13: 전라남도
-14: 전라북도
-15: 제주특별자치도
-16: 충청남도
-17: 충청북도
+1: 강원
+2: 경기
+3: 경남
+4: 경북
+5: 광주
+6: 대구
+7: 대전
+8: 부산
+9: 서울
+10: 세종
+11: 울산
+12: 인천
+13: 전남
+14: 전북
+15: 제주
+16: 충남
+17: 충북
 ==================================================
 번호를 입력하세요 (0 입력 시 종료): 9
 
 ======================================================================
-서울특별시 최대 이익 아파트 추천 결과 (단위: 만 원)
+서울 최대 이익 아파트 추천 결과 (단위: 만 원)
 ======================================================================
-**최적 아파트:** 까치마을 (강남구 수서동)
-**전용면적:** 34.44 m²
-**2025년 12월 예상 매입가:** 90,213 만 원
-**2030년 12월 예상 매각가:** 179,330 만 원
-**예상 최대 이익 (5년):** 89,117 만 원
+**최적 아파트:** 올림픽훼밀리타운 (송파구 문정동)
+**전용면적:** 158.71 m²
+**2025년 12월 예상 매입가:** 118,168 만 원
+**2030년 12월 예상 매각가:** 169,981 만 원
+**예상 최대 이익 (5년):** 51,813 만 원
 ======================================================================
 
-상위 10개 추천 아파트 목록 (서울특별시, 이익 만 원 기준)
+상위 10개 추천 아파트 목록 (서울, 이익 만 원 기준)
+시도명 시군구명 법정동         아파트   전용면적 예상_최대이익 매입예상가_2025_12 매각예상가_2030_12
+ 서울  송파구 문정동    올림픽훼밀리타운 158.71  51,813       118,168       169,981
+ 서울  송파구 문정동    올림픽훼밀리타운 136.32  51,813        94,873       146,686
+ 서울  송파구 방이동 올림픽선수기자촌2단지 126.18  44,710       119,323       164,033
+ 서울  송파구 문정동    올림픽훼밀리타운 117.58  44,709        76,903       121,612
+ 서울  송파구 오금동          대림 125.79  39,476        88,181       127,657
+ 서울  강동구 명일동      현대(고덕) 131.83  39,219        58,428        97,647
+ 서울  강동구 명일동        명일우성 133.65  38,772        74,106       112,878
+ 서울  노원구 하계동          우성 127.22  29,070        53,333        82,403
+ 서울  송파구 방이동 올림픽선수기자촌2단지 100.31  24,068        97,110       121,178
+ 서울  송파구 방이동 올림픽선수기자촌3단지 100.31  22,700        97,309       120,009
+
+======================================================================
+결과는 ./results/서울_APT_Recommendation.txt 파일로 저장되었습니다.
+최적 아파트는 개별 PNG 파일로, 나머지 9개는 하나의 PNG 파일로 저장됩니다.
 ```
-| 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 예상_최대이익 | 매입예상가_2025_12 | 매각예상가_2030_12 | 
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 서울특별시 | 강남구 | 수서동 | 까치마을 | 34.44 | 89,117 | 90,213 | 179,330 |
-| 서울특별시 | 강남구 | 수서동 | 까치마을 | 39.60 | 81,822 | 101,069 | 182,891 |
-| 서울특별시 | 강남구 | 개포동 | 성원대치2단지아파트 | 33.18 | 80,761 | 105,094 | 185,855 |
-| 서울특별시 | 강남구 | 수서동 | 신동아 | 33.18 | 79,574 | 99,834 | 179,408 |
-| 서울특별시 | 강남구 | 개포동 | 삼익대청아파트 | 39.53 | 77,611 | 116,341 | 193,952 |
-| 서울특별시 | 강남구 | 수서동 | 까치마을 | 49.50 | 74,225 | 119,069 | 193,294 |
-| 서울특별시 | 강남구 | 개포동 | 성원대치2단지아파트 | 39.53 | 73,466 | 116,127 | 189,593 |
-| 서울특별시 | 강남구 | 수서동 | 신동아 | 39.51 | 72,278 | 109,512 | 181,790 |
-| 서울특별시 | 강남구 | 일원동 | 수서 | 39.98 | 72,021 | 100,727 | 172,748 |
 
-![추천1등](./results/TS_BEST_서울특별시_강남구_수서동_까치마을_34_44m2_png.png)
-
-![추천2~10등](./results/Combined_Top9_Trends_서울특별시.png)
+![추천1등](./results/TS_BEST_서울_송파구_문정동_올림픽훼밀리타운_158_71m2_png.png)
+![추천2~10등](./results/Combined_Top9_Trends_서울.png)
 
 
 
