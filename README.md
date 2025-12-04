@@ -1,5 +1,5 @@
 # Title
-### 대한민국 아파트 실거래 데이터셋을 활용한 가격 예측 분석
+### 대한민국 아파트 실거래 데이터셋을 활용한 가격 예측을 통한 지역별 아파트 매입 추천
 
 # Member
 - 이강훈 Kanghun Lee
@@ -10,11 +10,11 @@
 - 대한민국 아파트 실거래 데이터셋을 머신러닝을 이용하여 학습시키고 매매 투자시 가장 큰 이익을 가져다 주는 아파트를 예측
 
 # 2. Dataset
-- 아파트 실거래가 데이터 'KoreaApartDeal.csv'  01/15/2015 ~ 04/30/2023 (425MB) from Kaggle
+- 아파트 실거래가 데이터 01/15/2015 ~ 04/30/2023 (Kaggle)
 - 국가지역코드 (공공데이터)
 - 행정구역 별 인구수 (KOSIS)
 - 행정구역 별 실업률 (KOSIS)
-- 시도 별 1인당 개인소독(KOSIS)
+- 시도 별 1인당 개인소득득(KOSIS)
 - 소비자물가지수(ECOS)
 - 예금은행 지역별 가계대출(말잔) (ECOS)
 - 한국은행 기준금리 (ECOS)
@@ -22,7 +22,7 @@
 # 3. Pre-Processing
 - Environment
     - python 3.11
-    - pip install pandas matplotlib
+    - pip install pandas matplotlib glob PIL
 
 
 - 'KoreaApartDeal.csv' Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터 'LocationCode.csv' 를 이용하여 Human Readable Data 로 변경
@@ -89,7 +89,117 @@ final_df['거래일'] = final_df['거래일_정리'].dt.date
 final_df.drop(columns=['거래일_정리'], inplace=True)
 ```
 
-# 4. Data Visialization
+- 아파트 매매 가격 변동에 영향을 줄 수 있는 인자 Data 들과 아파트 실거래가 Data를 시계열로 merge
+    - 행정구역 별 인구수
+    - 행정구역 별 실업률
+    - 시도 별 1인당 개인소득
+    - 소비자물가지수
+    - 예금은행 지역별 가계대출
+    - 한국은행 기준금리
+
+[ 아파트 실거래가 Data에 매매 가격 영향 인자를 지역별 시계열로 merge ]
+| ... | 시도명 | 시군구명 | 법정동 | 아파트 | 전용면적 | 거래일 | 거래금액 | 층 | 건축년도 | 기준금리 | 가계대출 | 은행대출 | 인구수 | 실업률 | CPI_총지수 | CPI_전년동기 | 월개인소득 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ... | 부산 | 남구 | 대연동 | 일동지에닌 | 84.99 | 2015-01-01 | 27500 | 25 | 2006.0 | 2.0 | 32299.1 | 85291.0 | 3517898 | 4.1 | 94.643 | 1.0 | 155.1 |
+| ... | 경남 | 양산시 | 물금읍 범어리 | 신창비바패밀리 | 84.839 | 2015-01-01 | 24250 | 10 | 2009.0 | 2.0 | 20598.0 | 63095.8 | 3351038 | 2.6 | 94.643 | 1.0 | 147.4 |
+| ... | 부산 | 사하구 | 하단동 | 가락타운1 | 84.96 | 2015-01-01 | 18200 | 19 | 1992.0 | 2.0 | 32299.1 | 85291.0 | 3517898 | 4.1 | 94.643 | 1.0 | 155.1 |
+
+```python
+    # 기준금리 합치기
+    apt_price_df = pd.merge_asof(
+        apt_price_df.sort_values("거래일"),
+        rate_df.sort_values("날짜"),
+        left_on="거래일",
+        right_on="날짜",
+        direction="forward",
+    ).drop(columns=["날짜"])
+
+    apt_price_df["월기준"] = apt_price_df["거래일"].values.astype("datetime64[M]")
+
+    # 가계대출금 합치기
+    loan_long = std_household_loan_df.melt(
+        id_vars=["날짜"],
+        var_name="시도명",
+        value_name="가계대출(만원)",
+    )
+    apt_price_df = pd.merge(
+        apt_price_df,
+        loan_long,
+        left_on=["월기준", "시도명"],
+        right_on=["날짜", "시도명"],
+        how="left",
+    ).drop(columns=["날짜"])
+
+
+    # 은행대출금 합치기
+    loan_long = std_bank_loan_df.melt(
+        id_vars=["날짜"],
+        var_name="시도명",
+        value_name="은행대출(만원)",
+    )
+    apt_price_df = pd.merge(
+        apt_price_df,
+        loan_long,
+        left_on=["월기준", "시도명"],
+        right_on=["날짜", "시도명"],
+        how="left",
+    ).drop(columns=["날짜"])
+
+    # 인구수 합치기
+    pop_long = std_population_df.melt(
+        id_vars=["날짜"],
+        var_name="시도명",
+        value_name="인구수",
+    )
+    apt_price_df = pd.merge(
+        apt_price_df,
+        pop_long,
+        left_on=["월기준", "시도명"],
+        right_on=["날짜", "시도명"],
+        how="left",
+    ).drop(columns=["날짜"])
+
+    # 실업률 합치기
+    unemp_long = std_unemployment_df.melt(
+        id_vars=["날짜"],
+        var_name="시도명",
+        value_name="실업률",
+    )
+    apt_price_df = pd.merge(
+        apt_price_df,
+        unemp_long,
+        left_on=["월기준", "시도명"],
+        right_on=["날짜", "시도명"],
+        how="left",
+    ).drop(columns=["날짜"])
+    print("실업률 합치기 end")
+
+    # CPI (소비자물가지수) 합치기
+    cpi_df["월기준"] = cpi_df["날짜"].values.astype("datetime64[M]")
+    apt_price_df = pd.merge(
+        apt_price_df,
+        cpi_df,
+        on="월기준",
+        how="left",
+    ).drop(columns=["날짜"])
+
+    # 개인소득 합치기
+    income_long = std_income_df.melt(
+        id_vars=["날짜"],
+        var_name="시도명",
+        value_name="월개인소득(만원)",
+    )
+    apt_price_df = pd.merge(
+        apt_price_df,
+        income_long,
+        left_on=["월기준", "시도명"],
+        right_on=["날짜", "시도명"],
+        how="left",
+    ).drop(columns=["날짜"])
+
+```
+
+# 4. PreProcess Data Visialization
 - 년도별 거래량 추이
 ![년도별 거래량 추이](./preprocessed/거래일별_거래건수_추이.png)
 
@@ -118,7 +228,10 @@ def save_transaction_plots_by_date(df, output_dir='preprocessed'):
 ```
 
 - 17개 광역시도 별 거래량 Top 100의 년도별 가격 추이
-![서울시 아파트 년도별 가격 추이](./preprocessed/서울특별시_가격추이_상위100.png)
+![서울시 아파트 년도별 가격 추이](./preprocessed/서울_가격추이_상위100.png)
+
+
+- 17개 광역시도 별 거래량 Top 100의 년도별 가격 추이
 ![서울시 아파트 년도별 가격 추이](./preprocessed/16개지역-top100.png)
 
 ```python
@@ -170,6 +283,98 @@ def save_top100_plots_by_sido(df, output_dir='preprocessed'):
         print(f"'{filepath}' file saved.")
 
         plt.close()
+```
+
+- 행정구역 별 인구수 추이
+![행정구역 별 인구수 추이](./preprocessed/행정구역별_인구수_추이.png)
+
+- 행정구역 별 실업률 추이
+![행정구역 별 실업률 추이](./preprocessed/행정구역별_실업률_추이.png)
+
+- 소비자물가지수 추이
+![소비자물가지수 추이](./preprocessed/소비자물가지수_추이.png)
+
+- 예금은행 지역별 가계대출 추이
+![예금은행 지역별 가대출 추이](./preprocessed/지역별_가계대출_추이.png)
+
+- 예금은행 지역별 은행대출 추이
+![예금은행 지역별 은행대출 추이](./preprocessed/지역별_은행대출_추이.png)
+
+- 한국은행 기준금리 추이
+![한국은행 기준금리 추이](./preprocessed/한국은행_기준금리_추이.png)
+
+```python
+def plot_macro_trends(pop_df, unemp_df, cpi_df, household_df, bank_df, rate_df, output_dir='preprocessed'):
+
+    # 1. 행정구역별 인구수 추이
+    plt.figure(figsize=(15, 8))
+    for col in pop_df.columns[1:]:
+        plt.plot(pop_df['날짜'], pop_df[col], label=col, alpha=0.7)
+    plt.title('행정구역별 인구수 추이', fontsize=16)
+    plt.xlabel('날짜')
+    plt.ylabel('인구수')
+    plt.legend(ncol=3, fontsize=9)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, '행정구역별_인구수_추이.png'), dpi=150)
+    plt.close()
+
+    # 2. 행정구역별 실업률 추이
+    plt.figure(figsize=(15, 8))
+    for col in unemp_df.columns[1:]:
+        plt.plot(unemp_df['날짜'], unemp_df[col], label=col, alpha=0.7)
+    plt.title('행정구역별 실업률 추이', fontsize=16)
+    plt.xlabel('날짜')
+    plt.ylabel('실업률(%)')
+    plt.legend(ncol=3, fontsize=9)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, '행정구역별_실업률_추이.png'), dpi=150)
+    plt.close()
+
+    # 3. 소비자물가지수(CPI) 추이
+    plt.figure(figsize=(12, 6))
+    plt.plot(cpi_df['날짜'], cpi_df['CPI_총지수'], color='royalblue', label='CPI 총지수')
+    plt.title('소비자물가지수(CPI) 추이', fontsize=16)
+    plt.xlabel('날짜')
+    plt.ylabel('CPI 총지수')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, '소비자물가지수_추이.png'), dpi=150)
+    plt.close()
+
+    # 4. 지역별 가계대출 추이
+    plt.figure(figsize=(15, 8))
+    for col in household_df.columns[1:]:
+        plt.plot(household_df['날짜'], household_df[col], label=col, alpha=0.7)
+    plt.title('지역별 가계대출 추이', fontsize=16)
+    plt.xlabel('날짜')
+    plt.ylabel('가계대출(만원)')
+    plt.legend(ncol=3, fontsize=9)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, '지역별_가계대출_추이.png'), dpi=150)
+    plt.close()
+
+    # 5. 지역별 은행대출 추이
+    plt.figure(figsize=(15, 8))
+    for col in bank_df.columns[1:]:
+        plt.plot(bank_df['날짜'], bank_df[col], label=col, alpha=0.7)
+    plt.title('지역별 은행대출 추이', fontsize=16)
+    plt.xlabel('날짜')
+    plt.ylabel('은행대출(만원)')
+    plt.legend(ncol=3, fontsize=9)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, '지역별_은행대출_추이.png'), dpi=150)
+    plt.close()
+
+    # 6. 한국은행 기준금리 추이
+    plt.figure(figsize=(12, 6))
+    plt.plot(rate_df['날짜'], rate_df['기준금리'], color='darkred', linewidth=2)
+    plt.title('한국은행 기준금리 추이', fontsize=16)
+    plt.xlabel('날짜')
+    plt.ylabel('기준금리(%)')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, '한국은행_기준금리_추이.png'), dpi=150)
+    plt.close()
+
 ```
 
 # 5. Analysis based on Theory
