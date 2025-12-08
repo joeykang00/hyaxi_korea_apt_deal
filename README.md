@@ -701,7 +701,3 @@ Resizing final image to 3000x1800...
 ![추천1등](./results/TS_BEST_서울_송파구_신천동_미성_55_62m2_png.png)
 ![추천2~10등](./results/Combined_Top9_Trends_서울.png)
 
-
-
-# 8. Lesson & Learn
-- TDB
