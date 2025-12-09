@@ -25,8 +25,8 @@
     - pip install pandas matplotlib glob PIL
     - pip install pandas numpy scikit-learn xgboost joblib matplotlib seaborn pillow      (for training and prediction)
 
-- Source Code
-    - APTDealData_PreProcessing.py
+- Executing Source Code
+    - python APTDealData_PreProcessing.py
 
 - 'KoreaApartDeal.csv' Data는 지역코드와 법정동 Data만 존재하여, 시도명 및 시군구명 공공데이터 'LocationCode.csv' 를 이용하여 Human Readable Data 로 변경
 - 지역명과 아파트, 전용면적으로 UniqueID로 고유값을 생성하여 Data Processing 및 시각화에 용의하도록 개선
@@ -423,8 +423,8 @@ def plot_macro_trends(pop_df, unemp_df, cpi_df, household_df, bank_df, rate_df, 
     - python 3.11
     - pip install pandas numpy scikit-learn xgboost joblib matplotlib seaborn pillow
 
-- Source Code
-    - APTDealData_Train_Predict.py
+- Executing Source Code
+    - python APTDealData_Train_Predict.py
 
 
 - Data Load
