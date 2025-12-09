@@ -23,6 +23,7 @@
 - Environment
     - python 3.11
     - pip install pandas matplotlib glob PIL
+    - pip install pandas numpy scikit-learn xgboost joblib matplotlib seaborn pillow      (for training and prediction)
 
 - Source Code
     - APTDealData_PreProcessing.py
